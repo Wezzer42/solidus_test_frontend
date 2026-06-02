@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --font-space: "Space Grotesk", "IBM Plex Mono", "JetBrains Mono", monospace;
+  --font-sans: "Work Sans", "Aptos", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #f3f7ff;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans), sans-serif;
+}
+
+button,
+a,
+input {
+  font: inherit;
+}
+
+@layer components {
+  .btn-primary {
+    @apply rounded-full bg-[#0052ff] px-5 py-3 text-center font-bold text-white transition hover:bg-[#0047df] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-secondary {
+    @apply rounded-full border border-[#cddcff] bg-white px-5 py-3 text-center font-bold text-[#0b1736] transition hover:border-[#9cb8ff] hover:bg-[#f3f7ff] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+}

@@ -559,6 +559,9 @@ export default function MarketPage() {
 
   async function buyOrder(row: MarketOrderRow) {
     if (!account) return setStatus("Connect wallet.");
+    if (row.seller.toLowerCase() === account.toLowerCase()) {
+      return setStatus("You cannot buy your own PRIME order.");
+    }
     if (!row.executable) return setStatus("Order below floor — stale.");
     setPending(true);
     try {
@@ -787,6 +790,9 @@ export default function MarketPage() {
   }
 
   const walletDisabled = !account || wrongNetwork || pending;
+  const myPrimeOrders = orders.filter(
+    (row) => account && row.seller.toLowerCase() === account.toLowerCase(),
+  );
 
   return (
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
@@ -888,8 +894,14 @@ export default function MarketPage() {
             <div className="space-y-6">
               <Panel
                 title="Sell PRIME"
-                description="List PRIME for FLOW. Price must be at or above the reserve floor."
+                description="List PRIME for FLOW. Price must be at or above the reserve floor. You cannot buy your own order."
               >
+                {myPrimeOrders.length > 0 ? (
+                  <p className="mb-4 rounded-xl border border-[#dce7ff] bg-[#f9fbff] px-4 py-3 text-sm text-[#496ab3]">
+                    You have an active sell order for {fmt(myPrimeOrders[0].primeAmount)} PRIME at{" "}
+                    {fmt(myPrimeOrders[0].flowPrice)} FLOW. Cancel it here before relisting.
+                  </p>
+                ) : null}
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block text-sm font-semibold text-[#35549a]">
                     PRIME amount
@@ -989,7 +1001,7 @@ export default function MarketPage() {
 
             <Panel
               title="Buy PRIME"
-              description="Pay FLOW to take an open sell order. Approve FLOW first if prompted."
+              description="Open sell orders on-chain. Your own listings are marked — you cannot buy PRIME from yourself."
               action={
                 <button className="btn-secondary text-sm" type="button" disabled={pending} onClick={() => loadOrders()}>
                   {loadingOrders ? "Refreshing…" : "Refresh"}
@@ -1007,7 +1019,9 @@ export default function MarketPage() {
                     return (
                       <article
                         key={row.id.toString()}
-                        className="rounded-xl border border-[#dce7ff] bg-[#f9fbff] p-4"
+                        className={`rounded-xl border p-4 ${
+                          isMine ? "border-[#9cb8ff] bg-[#eaf0ff]" : "border-[#dce7ff] bg-[#f9fbff]"
+                        }`}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -1023,8 +1037,8 @@ export default function MarketPage() {
                           </div>
                           <div className="flex flex-wrap gap-2">
                             {isMine ? (
-                              <span className="rounded-full bg-[#eaf0ff] px-2.5 py-1 text-xs font-bold text-[#0052ff]">
-                                Yours
+                              <span className="rounded-full bg-[#0052ff] px-2.5 py-1 text-xs font-bold text-white">
+                                Your order
                               </span>
                             ) : null}
                             <StatusBadge ready={row.executable} />
@@ -1046,13 +1060,18 @@ export default function MarketPage() {
                             </dd>
                           </div>
                         </dl>
+                        {isMine ? (
+                          <p className="mt-3 text-xs font-semibold text-[#496ab3]">
+                            You cannot buy your own PRIME. Cancel here or from Sell PRIME.
+                          </p>
+                        ) : null}
                         <button
                           className={`mt-4 w-full sm:w-auto ${isMine ? "btn-secondary" : "btn-primary"}`}
                           type="button"
                           disabled={walletDisabled || (!isMine && !row.executable)}
                           onClick={() => (isMine ? cancelMyOrder() : buyOrder(row))}
                         >
-                          {isMine ? "Cancel order" : "Buy with FLOW"}
+                          {isMine ? "Cancel your order" : "Buy with FLOW"}
                         </button>
                       </article>
                     );

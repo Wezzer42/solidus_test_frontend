@@ -36,4 +36,24 @@ input {
   .btn-secondary {
     @apply rounded-full border border-[#cddcff] bg-white px-5 py-3 text-center font-bold text-[#0b1736] transition hover:border-[#9cb8ff] hover:bg-[#f3f7ff] disabled:cursor-not-allowed disabled:opacity-50;
   }
+
+  .input-field {
+    @apply mt-2 w-full rounded-xl border border-[#cddcff] bg-white px-4 py-3 text-[#0b1736] outline-none transition placeholder:text-[#84a0da] focus:border-[#0052ff];
+  }
+
+  .panel {
+    @apply rounded-2xl border border-[#dce7ff] bg-white p-5 sm:p-6;
+  }
+
+  .tab-btn {
+    @apply flex-1 rounded-full px-4 py-2.5 text-sm font-bold transition;
+  }
+
+  .tab-btn-active {
+    @apply bg-white text-[#0052ff] shadow-sm;
+  }
+
+  .tab-btn-idle {
+    @apply text-[#496ab3] hover:text-[#0b1736];
+  }
 }

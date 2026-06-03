@@ -1,30 +1,76 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { baseSepolia } from "viem/chains";
 import { formatEther, isAddress, type Address } from "viem";
+import { WalletBalances, ProtocolStats } from "../components/market-ui";
 import { SolidusLogo } from "../components/solidus-logo";
 import { hasContracts } from "../lib/contracts";
+import {
+  fetchProtocolStats,
+  formatProtocolAmount,
+  type ProtocolStatsSnapshot,
+} from "../lib/protocol-stats";
+import {
+  fetchWalletBalances,
+  formatTokenAmount,
+  type WalletBalanceSnapshot,
+} from "../lib/wallet-balances";
+import { ethereum, revokeWalletAccess } from "../lib/wallet";
 
 const baseScan = "https://sepolia.basescan.org";
 const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/";
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
 };
-
-function ethereum() {
-  if (typeof window === "undefined") return undefined;
-  return (window as typeof window & { ethereum?: EthereumProvider }).ethereum;
-}
 
 export default function Home() {
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(false);
   const [faucetHash, setFaucetHash] = useState<`0x${string}`>();
   const [targetAddress, setTargetAddress] = useState("");
+  const [connectedAddress, setConnectedAddress] = useState<Address>();
   const [faucetRemaining, setFaucetRemaining] = useState<string>();
+  const [walletBalances, setWalletBalances] = useState<WalletBalanceSnapshot>();
+  const [loadingBalances, setLoadingBalances] = useState(false);
+  const [protocolStats, setProtocolStats] = useState<ProtocolStatsSnapshot>();
+  const [loadingProtocolStats, setLoadingProtocolStats] = useState(false);
   const contractsReady = hasContracts();
+
+  const watchedAddress = (() => {
+    const typed = targetAddress.trim();
+    if (isAddress(typed)) return typed as Address;
+    return connectedAddress;
+  })();
+
+  const loadWalletBalances = useCallback(async (address: Address) => {
+    if (!contractsReady) return;
+    setLoadingBalances(true);
+    try {
+      const snapshot = await fetchWalletBalances(address);
+      setWalletBalances(snapshot ?? undefined);
+    } catch {
+      setWalletBalances(undefined);
+    } finally {
+      setLoadingBalances(false);
+    }
+  }, [contractsReady]);
+
+  const loadProtocolStats = useCallback(async () => {
+    if (!contractsReady) return;
+    setLoadingProtocolStats(true);
+    try {
+      const snapshot = await fetchProtocolStats();
+      setProtocolStats(snapshot ?? undefined);
+    } catch {
+      setProtocolStats(undefined);
+    } finally {
+      setLoadingProtocolStats(false);
+    }
+  }, [contractsReady]);
 
   async function loadFaucetStatus() {
     try {
@@ -42,7 +88,48 @@ export default function Home() {
 
   useEffect(() => {
     void loadFaucetStatus();
-  }, []);
+    void loadProtocolStats();
+  }, [loadProtocolStats]);
+
+  useEffect(() => {
+    if (!watchedAddress) {
+      setWalletBalances(undefined);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      void loadWalletBalances(watchedAddress);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [watchedAddress, loadWalletBalances]);
+
+  useEffect(() => {
+    const provider = ethereum();
+    if (!provider) return;
+
+    const onAccountsChanged = (accounts: unknown) => {
+      const next = (accounts as Address[])[0];
+      setConnectedAddress(next);
+      if (!next && !targetAddress.trim()) setWalletBalances(undefined);
+    };
+
+    provider.request({ method: "eth_accounts" }).then((accounts) => {
+      const next = (accounts as Address[])[0];
+      if (next) setConnectedAddress(next);
+    });
+
+    const eth = provider as EthereumProvider;
+    eth.on?.("accountsChanged", onAccountsChanged);
+    return () => eth.removeListener?.("accountsChanged", onAccountsChanged);
+  }, [targetAddress]);
+
+  function disconnectWallet() {
+    const provider = ethereum();
+    if (provider) void revokeWalletAccess(provider);
+    setConnectedAddress(undefined);
+    if (!targetAddress.trim()) setWalletBalances(undefined);
+  }
 
   async function ensureBaseSepolia(provider: EthereumProvider) {
     const chainIdHex = `0x${baseSepolia.id.toString(16)}`;
@@ -81,13 +168,16 @@ export default function Home() {
     setFaucetHash(undefined);
     setStatus("Getting test FLOW...");
     try {
-      let account = targetAddress.trim();
-      if (account) {
-        if (!isAddress(account)) throw new Error("Invalid wallet address.");
+      let account: Address;
+      const typed = targetAddress.trim();
+      if (typed) {
+        if (!isAddress(typed)) throw new Error("Invalid wallet address.");
+        account = typed;
       } else {
         const accounts = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
         account = accounts[0];
         if (!account) throw new Error("Wallet address not found.");
+        setConnectedAddress(account);
       }
       await ensureBaseSepolia(provider);
 
@@ -102,6 +192,8 @@ export default function Home() {
       setFaucetHash(body.hash);
       setStatus("Test FLOW sent.");
       await loadFaucetStatus();
+      await loadWalletBalances(account);
+      await loadProtocolStats();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Could not get FLOW.");
     } finally {
@@ -131,6 +223,20 @@ export default function Home() {
             <p className="mt-4 text-xl font-semibold tracking-[-0.03em] text-[#335aa8]">Use FLOW. Earn PRIME.</p>
           </div>
 
+          <ProtocolStats
+            activeFlow={protocolStats ? formatProtocolAmount(protocolStats.activeFlow, "FLOW") : undefined}
+            reserveFlow={protocolStats ? formatProtocolAmount(protocolStats.reserveFlow, "FLOW") : undefined}
+            primeSupply={protocolStats ? formatProtocolAmount(protocolStats.primeSupply, "PRIME") : undefined}
+            primeCap={protocolStats ? formatProtocolAmount(protocolStats.primeCap, "PRIME", 0) : undefined}
+            activeRatioBps={
+              protocolStats
+                ? `${(Number(protocolStats.activeRatioBps) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 })}% active FLOW`
+                : undefined
+            }
+            loading={loadingProtocolStats}
+            onRefresh={loadProtocolStats}
+          />
+
           <section className="rounded-2xl bg-[#eaf0ff] p-5">
             <h2 className="font-display text-3xl font-black tracking-[-0.06em]">Get test FLOW</h2>
             <p className="mt-2 text-sm leading-6 text-[#3a589b]">
@@ -152,6 +258,18 @@ export default function Home() {
               Get FLOW
             </button>
           </section>
+
+          {watchedAddress ? (
+            <WalletBalances
+              account={watchedAddress}
+              flow={walletBalances ? formatTokenAmount(walletBalances.flow, "FLOW") : undefined}
+              prime={walletBalances ? formatTokenAmount(walletBalances.prime, "PRIME") : undefined}
+              eth={walletBalances ? formatTokenAmount(walletBalances.eth, "ETH", 5) : undefined}
+              loading={loadingBalances}
+              onRefresh={() => loadWalletBalances(watchedAddress)}
+              onDisconnect={connectedAddress && watchedAddress === connectedAddress ? disconnectWallet : undefined}
+            />
+          ) : null}
 
           <section className="rounded-2xl border border-[#dce7ff] bg-white p-5">
             <p className="text-sm font-semibold text-[#35549a]">

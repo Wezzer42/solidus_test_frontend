@@ -36,6 +36,7 @@ NEXT_PUBLIC_FLOW_ADDRESS=
 NEXT_PUBLIC_PRIME_ADDRESS=
 NEXT_PUBLIC_RESERVE_ADDRESS=
 NEXT_PUBLIC_PRIME_MARKET_ADDRESS=
+NEXT_PUBLIC_TEST_EXCHANGE_ADDRESS=
 
 BASE_SEPOLIA_RPC=
 FAUCET_PRIVATE_KEY=
@@ -84,3 +85,5 @@ PRIME market orders are not stored in the backend. `PrimeMarket` exposes them on
 6. Buy, sell, or redeem PRIME.
 
 `PrimeMarket` is protocol logic for PRIME/FLOW settlement. The market is intentionally limited to FLOW and PRIME only.
+
+`TestExchange` is a separate public testnet orderbook for FLOW against native Base Sepolia ETH or arbitrary test ERC-20 tokens. PRIME is explicitly excluded from that exchange.

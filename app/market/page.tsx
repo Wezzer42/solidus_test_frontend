@@ -14,7 +14,16 @@ import {
 } from "viem";
 import { baseSepolia } from "viem/chains";
 import { SolidusLogo } from "../../components/solidus-logo";
-import { addresses, flowAbi, hasContracts, marketAbi, reserveAbi } from "../../lib/contracts";
+import {
+  addresses,
+  erc20Abi,
+  flowAbi,
+  hasContracts,
+  hasTestExchange,
+  marketAbi,
+  reserveAbi,
+  testExchangeAbi,
+} from "../../lib/contracts";
 
 type MarketOrderRow = {
   id: bigint;
@@ -25,11 +34,20 @@ type MarketOrderRow = {
   executable: boolean;
 };
 
+type FlowOrderRow = {
+  id: bigint;
+  seller: Address;
+  paymentToken: Address;
+  flowAmount: bigint;
+  paymentAmount: bigint;
+};
+
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
 };
 
 const baseScan = "https://sepolia.basescan.org";
+const nativeToken = "0x0000000000000000000000000000000000000000" as Address;
 
 function ethereum() {
   if (typeof window === "undefined") return undefined;
@@ -57,20 +75,29 @@ function fmt(value: bigint, digits = 4) {
   return Number(formatEther(value)).toLocaleString("en-US", { maximumFractionDigits: digits });
 }
 
+function tokenLabel(token: Address) {
+  return token.toLowerCase() === nativeToken ? "Base Sepolia ETH" : short(token);
+}
+
 export default function MarketPage() {
   const [account, setAccount] = useState<Address>();
   const [chainId, setChainId] = useState<number>();
   const [orders, setOrders] = useState<MarketOrderRow[]>([]);
+  const [flowOrders, setFlowOrders] = useState<FlowOrderRow[]>([]);
   const [recipient, setRecipient] = useState("");
   const [transferAmount, setTransferAmount] = useState("1000");
   const [primeAmount, setPrimeAmount] = useState("100");
   const [flowPrice, setFlowPrice] = useState("400");
+  const [flowSellAmount, setFlowSellAmount] = useState("1000");
+  const [paymentAmount, setPaymentAmount] = useState("0.001");
+  const [paymentToken, setPaymentToken] = useState("");
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(false);
   const [txHash, setTxHash] = useState<`0x${string}`>();
 
   const wrongNetwork = Boolean(account && chainId !== baseSepolia.id);
   const contractsReady = hasContracts();
+  const exchangeReady = hasTestExchange();
 
   const loadOrders = useCallback(async () => {
     if (!contractsReady) return;
@@ -111,9 +138,39 @@ export default function MarketPage() {
     setOrders(loaded.filter((order): order is MarketOrderRow => Boolean(order)).reverse());
   }, [contractsReady]);
 
+  const loadFlowOrders = useCallback(async () => {
+    if (!exchangeReady) return;
+
+    const client = publicClient();
+    const nextId = await client.readContract({
+      address: addresses.testExchange,
+      abi: testExchangeAbi,
+      functionName: "nextOrderId",
+    });
+    const from = nextId > 50n ? nextId - 50n : 1n;
+    const ids = Array.from({ length: Number(nextId - from) }, (_, index) => from + BigInt(index));
+    const loaded = await Promise.all(
+      ids.map(async (id) => {
+        const [seller, paymentToken, flowAmount, paymentAmount, active] = await client.readContract({
+          address: addresses.testExchange,
+          abi: testExchangeAbi,
+          functionName: "orders",
+          args: [id],
+        });
+        if (!active || flowAmount === 0n || paymentAmount === 0n) return undefined;
+        return { id, seller, paymentToken, flowAmount, paymentAmount };
+      }),
+    );
+    setFlowOrders(loaded.filter((order): order is FlowOrderRow => Boolean(order)).reverse());
+  }, [exchangeReady]);
+
   useEffect(() => {
     loadOrders().catch((e) => setStatus(e instanceof Error ? e.message : "Load failed."));
   }, [loadOrders]);
+
+  useEffect(() => {
+    loadFlowOrders().catch((e) => setStatus(e instanceof Error ? e.message : "Load FLOW orders failed."));
+  }, [loadFlowOrders]);
 
   async function connect() {
     const provider = ethereum();
@@ -304,6 +361,115 @@ export default function MarketPage() {
     }
   }
 
+  async function listFlowOrder() {
+    if (!account) return setStatus("Connect wallet.");
+    if (!exchangeReady) return setStatus("Test exchange not configured.");
+
+    const token = paymentToken.trim() ? paymentToken.trim() : nativeToken;
+    if (!isAddress(token)) return setStatus("Payment token must be an address or empty for Base Sepolia ETH.");
+
+    setPending(true);
+    try {
+      const flowAmount = parseEther(flowSellAmount || "0");
+      const payAmount = parseEther(paymentAmount || "0");
+      const client = publicClient();
+      const allowance = await client.readContract({
+        address: addresses.flow,
+        abi: flowAbi,
+        functionName: "allowance",
+        args: [account, addresses.testExchange],
+      });
+      const wallet = walletClient(account);
+      if (allowance < flowAmount) {
+        const approveHash = await wallet.writeContract({
+          address: addresses.flow,
+          abi: flowAbi,
+          functionName: "approve",
+          args: [addresses.testExchange, flowAmount],
+        });
+        setTxHash(approveHash);
+        setStatus("Approve FLOW, then list again.");
+        return;
+      }
+
+      const hash = await wallet.writeContract({
+        address: addresses.testExchange,
+        abi: testExchangeAbi,
+        functionName: "placeFlowSellOrder",
+        args: [token as Address, flowAmount, payAmount],
+      });
+      setTxHash(hash);
+      await loadFlowOrders();
+      setStatus("FLOW order listed.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "FLOW listing failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function cancelFlowOrder(orderId: bigint) {
+    if (!account) return setStatus("Connect wallet.");
+    setPending(true);
+    try {
+      const hash = await walletClient(account).writeContract({
+        address: addresses.testExchange,
+        abi: testExchangeAbi,
+        functionName: "cancelFlowSellOrder",
+        args: [orderId],
+      });
+      setTxHash(hash);
+      await loadFlowOrders();
+      setStatus("FLOW order cancelled.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Cancel FLOW order failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function fillFlowOrder(row: FlowOrderRow) {
+    if (!account) return setStatus("Connect wallet.");
+    setPending(true);
+    try {
+      const wallet = walletClient(account);
+      if (row.paymentToken.toLowerCase() !== nativeToken) {
+        const allowance = await publicClient().readContract({
+          address: row.paymentToken,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account, addresses.testExchange],
+        });
+        if (allowance < row.paymentAmount) {
+          const approveHash = await wallet.writeContract({
+            address: row.paymentToken,
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [addresses.testExchange, row.paymentAmount],
+          });
+          setTxHash(approveHash);
+          setStatus("Approve payment token, then buy FLOW again.");
+          return;
+        }
+      }
+
+      const hash = await wallet.writeContract({
+        address: addresses.testExchange,
+        abi: testExchangeAbi,
+        functionName: "fillFlowSellOrder",
+        args: [row.id],
+        value: row.paymentToken.toLowerCase() === nativeToken ? row.paymentAmount : 0n,
+      });
+      setTxHash(hash);
+      await loadFlowOrders();
+      setStatus("Bought FLOW.");
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : "Buy FLOW failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
@@ -398,6 +564,119 @@ export default function MarketPage() {
               Cancel mine
             </button>
           </div>
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-[#d6e2ff] bg-white p-5">
+          <h2 className="font-display text-2xl font-black">FLOW test exchange</h2>
+          <p className="mt-1 text-sm text-[#496ab3]">
+            Sell FLOW for Base Sepolia ETH or any test ERC-20. PRIME is not part of this exchange.
+          </p>
+          {!exchangeReady ? (
+            <p className="mt-3 rounded-xl bg-[#fff4d8] p-3 text-sm font-semibold text-[#805b00]">
+              Test exchange address is not configured.
+            </p>
+          ) : null}
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="block text-sm">
+              <span className="font-bold">FLOW to sell</span>
+              <input
+                className="mt-1 w-full rounded-xl border border-[#cddcff] bg-[#f9fbff] px-3 py-2"
+                value={flowSellAmount}
+                onChange={(e) => setFlowSellAmount(e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="font-bold">Payment amount</span>
+              <input
+                className="mt-1 w-full rounded-xl border border-[#cddcff] bg-[#f9fbff] px-3 py-2"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
+            </label>
+            <label className="block text-sm">
+              <span className="font-bold">Payment token</span>
+              <input
+                className="mt-1 w-full rounded-xl border border-[#cddcff] bg-[#f9fbff] px-3 py-2"
+                value={paymentToken}
+                onChange={(e) => setPaymentToken(e.target.value)}
+                placeholder="empty = Base Sepolia ETH"
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs font-semibold text-[#6280c3]">
+            Keep enough FLOW and allowance until the order is filled. For ERC-20 payment, paste the token contract address.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              className="btn-primary"
+              type="button"
+              disabled={!account || wrongNetwork || pending || !exchangeReady}
+              onClick={listFlowOrder}
+            >
+              Sell FLOW
+            </button>
+            <button className="btn-secondary" type="button" disabled={pending || !exchangeReady} onClick={() => loadFlowOrders()}>
+              Refresh FLOW orders
+            </button>
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-display text-2xl font-black">Buy FLOW</h2>
+          </div>
+          {flowOrders.length === 0 ? (
+            <p className="rounded-2xl border border-dashed border-[#bcd0ff] bg-white p-8 text-center text-[#496ab3]">
+              No FLOW orders yet.
+            </p>
+          ) : (
+            <div className="overflow-hidden rounded-2xl border border-[#d6e2ff] bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b bg-[#f3f7ff] text-xs uppercase text-[#6280c3]">
+                  <tr>
+                    <th className="px-4 py-3">#</th>
+                    <th className="px-4 py-3">Seller</th>
+                    <th className="px-4 py-3">FLOW</th>
+                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3">Token</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {flowOrders.map((row) => (
+                    <tr key={row.id.toString()} className="border-b last:border-0">
+                      <td className="px-4 py-3 font-mono text-xs">{row.id.toString()}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{short(row.seller)}</td>
+                      <td className="px-4 py-3">{fmt(row.flowAmount)}</td>
+                      <td className="px-4 py-3">{fmt(row.paymentAmount, 6)}</td>
+                      <td className="px-4 py-3 font-mono text-xs">{tokenLabel(row.paymentToken)}</td>
+                      <td className="px-4 py-3 text-right">
+                        {account?.toLowerCase() === row.seller.toLowerCase() ? (
+                          <button
+                            className="btn-secondary text-xs"
+                            type="button"
+                            disabled={!account || wrongNetwork || pending}
+                            onClick={() => cancelFlowOrder(row.id)}
+                          >
+                            Cancel
+                          </button>
+                        ) : (
+                          <button
+                            className="btn-primary text-xs"
+                            type="button"
+                            disabled={!account || wrongNetwork || pending}
+                            onClick={() => fillFlowOrder(row)}
+                          >
+                            Buy FLOW
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section className="mt-6">

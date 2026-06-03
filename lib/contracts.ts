@@ -7,12 +7,17 @@ export const addresses = {
   prime: process.env.NEXT_PUBLIC_PRIME_ADDRESS as Address,
   reserve: process.env.NEXT_PUBLIC_RESERVE_ADDRESS as Address,
   market: process.env.NEXT_PUBLIC_PRIME_MARKET_ADDRESS as Address,
+  testExchange: process.env.NEXT_PUBLIC_TEST_EXCHANGE_ADDRESS as Address,
 };
 
 export function hasContracts() {
   return [addresses.flow, addresses.prime, addresses.reserve, addresses.market].every(
     (address) => Boolean(address) && address !== "0x0000000000000000000000000000000000000000",
   );
+}
+
+export function hasTestExchange() {
+  return Boolean(addresses.testExchange) && addresses.testExchange !== "0x0000000000000000000000000000000000000000";
 }
 
 export const flowAbi = [
@@ -66,6 +71,77 @@ export const flowAbi = [
       { name: "amount", type: "uint256" },
     ],
     outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+export const erc20Abi = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+export const testExchangeAbi = [
+  {
+    type: "function",
+    name: "nextOrderId",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "orders",
+    stateMutability: "view",
+    inputs: [{ name: "", type: "uint256" }],
+    outputs: [
+      { name: "seller", type: "address" },
+      { name: "paymentToken", type: "address" },
+      { name: "flowAmount", type: "uint256" },
+      { name: "paymentAmount", type: "uint256" },
+      { name: "active", type: "bool" },
+    ],
+  },
+  {
+    type: "function",
+    name: "placeFlowSellOrder",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "paymentToken", type: "address" },
+      { name: "flowAmount", type: "uint256" },
+      { name: "paymentAmount", type: "uint256" },
+    ],
+    outputs: [{ name: "orderId", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "cancelFlowSellOrder",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "fillFlowSellOrder",
+    stateMutability: "payable",
+    inputs: [{ name: "orderId", type: "uint256" }],
+    outputs: [],
   },
 ] as const;
 

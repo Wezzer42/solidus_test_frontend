@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { baseSepolia } from "viem/chains";
 import { formatEther, isAddress, type Address } from "viem";
+import { SolidusLogo } from "../components/solidus-logo";
 import { hasContracts } from "../lib/contracts";
 
 const baseScan = "https://sepolia.basescan.org";
@@ -112,13 +113,10 @@ export default function Home() {
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-4 sm:px-6">
         <header className="flex items-center justify-between border-b border-[#d6e2ff] pb-4">
-          <div className="flex items-center gap-3">
-            <div className="grid size-9 place-items-center rounded-full bg-[#0052ff] text-sm font-black text-white">S</div>
-            <div className="font-display text-xl font-black tracking-[-0.06em]">Solidus</div>
-          </div>
+          <SolidusLogo />
           <nav className="hidden items-center gap-5 text-sm font-medium text-[#3f5ea8] sm:flex">
             <a href="/market">Market</a>
-            <a href="/whitepaper" target="_blank">Whitepaper</a>
+            <a href="/whitepaper">Whitepaper</a>
             <a href={githubUrl} target="_blank">GitHub</a>
             <a href={baseScan} target="_blank">BaseScan</a>
           </nav>

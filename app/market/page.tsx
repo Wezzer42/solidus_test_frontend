@@ -13,6 +13,7 @@ import {
   type Address,
 } from "viem";
 import { baseSepolia } from "viem/chains";
+import { SolidusLogo } from "../../components/solidus-logo";
 import { addresses, flowAbi, hasContracts, marketAbi, reserveAbi } from "../../lib/contracts";
 
 type MarketOrderRow = {
@@ -308,10 +309,8 @@ export default function MarketPage() {
       <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-[#d6e2ff] pb-4">
           <div>
-            <Link href="/" className="font-display text-xl font-black tracking-[-0.06em]">
-              Solidus
-            </Link>
-            <p className="text-sm text-[#496ab3]">Orders ready to fill</p>
+            <SolidusLogo />
+            <p className="mt-1 text-sm text-[#496ab3]">Orders ready to fill</p>
           </div>
           <div className="flex gap-2">
             <Link href="/" className="btn-secondary">

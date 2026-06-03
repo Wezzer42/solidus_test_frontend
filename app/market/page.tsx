@@ -1002,51 +1002,61 @@ export default function MarketPage() {
                 <EmptyOrders message="No PRIME sell orders on-chain yet. Be the first to list." />
               ) : (
                 <div className="space-y-3">
-                  {orders.map((row) => (
-                    <article
-                      key={row.id.toString()}
-                      className="rounded-xl border border-[#dce7ff] bg-[#f9fbff] p-4"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6280c3]">
-                            Order #{row.id.toString()}
-                          </p>
-                          <p className="mt-1 font-display text-lg font-black tracking-[-0.04em]">
-                            {fmt(row.primeAmount)} PRIME
-                          </p>
-                          <p className="mt-1 text-sm text-[#496ab3]">
-                            for <span className="font-bold text-[#0052ff]">{fmt(row.flowPrice)} FLOW</span>
-                          </p>
-                        </div>
-                        <StatusBadge ready={row.executable} />
-                      </div>
-                      <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#496ab3] sm:grid-cols-3">
-                        <div>
-                          <dt className="font-bold uppercase tracking-wide">Seller</dt>
-                          <dd className="mt-0.5 font-mono">{short(row.seller)}</dd>
-                        </div>
-                        <div>
-                          <dt className="font-bold uppercase tracking-wide">Floor</dt>
-                          <dd className="mt-0.5">{fmt(row.floorFlow)} FLOW</dd>
-                        </div>
-                        <div className="col-span-2 sm:col-span-1">
-                          <dt className="font-bold uppercase tracking-wide">Rate</dt>
-                          <dd className="mt-0.5">
-                            {(Number(formatEther(row.flowPrice)) / Number(formatEther(row.primeAmount))).toFixed(2)} FLOW/PRIME
-                          </dd>
-                        </div>
-                      </dl>
-                      <button
-                        className="btn-primary mt-4 w-full sm:w-auto"
-                        type="button"
-                        disabled={walletDisabled || !row.executable}
-                        onClick={() => buyOrder(row)}
+                  {orders.map((row) => {
+                    const isMine = account?.toLowerCase() === row.seller.toLowerCase();
+                    return (
+                      <article
+                        key={row.id.toString()}
+                        className="rounded-xl border border-[#dce7ff] bg-[#f9fbff] p-4"
                       >
-                        Buy with FLOW
-                      </button>
-                    </article>
-                  ))}
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#6280c3]">
+                              Order #{row.id.toString()}
+                            </p>
+                            <p className="mt-1 font-display text-lg font-black tracking-[-0.04em]">
+                              {fmt(row.primeAmount)} PRIME
+                            </p>
+                            <p className="mt-1 text-sm text-[#496ab3]">
+                              for <span className="font-bold text-[#0052ff]">{fmt(row.flowPrice)} FLOW</span>
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {isMine ? (
+                              <span className="rounded-full bg-[#eaf0ff] px-2.5 py-1 text-xs font-bold text-[#0052ff]">
+                                Yours
+                              </span>
+                            ) : null}
+                            <StatusBadge ready={row.executable} />
+                          </div>
+                        </div>
+                        <dl className="mt-3 grid grid-cols-2 gap-2 text-xs text-[#496ab3] sm:grid-cols-3">
+                          <div>
+                            <dt className="font-bold uppercase tracking-wide">Seller</dt>
+                            <dd className="mt-0.5 font-mono">{short(row.seller)}</dd>
+                          </div>
+                          <div>
+                            <dt className="font-bold uppercase tracking-wide">Floor</dt>
+                            <dd className="mt-0.5">{fmt(row.floorFlow)} FLOW</dd>
+                          </div>
+                          <div className="col-span-2 sm:col-span-1">
+                            <dt className="font-bold uppercase tracking-wide">Rate</dt>
+                            <dd className="mt-0.5">
+                              {(Number(formatEther(row.flowPrice)) / Number(formatEther(row.primeAmount))).toFixed(2)} FLOW/PRIME
+                            </dd>
+                          </div>
+                        </dl>
+                        <button
+                          className={`mt-4 w-full sm:w-auto ${isMine ? "btn-secondary" : "btn-primary"}`}
+                          type="button"
+                          disabled={walletDisabled || (!isMine && !row.executable)}
+                          onClick={() => (isMine ? cancelMyOrder() : buyOrder(row))}
+                        >
+                          {isMine ? "Cancel order" : "Buy with FLOW"}
+                        </button>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </Panel>

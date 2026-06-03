@@ -4,6 +4,7 @@ import { formatEther } from "viem";
 import { SolidusLogo } from "./solidus-logo";
 
 const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/";
+const discordUrl = "https://discord.gg/x5mWWZH4";
 const baseScan = "https://sepolia.basescan.org";
 
 export function MarketHeader({
@@ -29,6 +30,9 @@ export function MarketHeader({
         <Link href="/whitepaper">Whitepaper</Link>
         <a href={githubUrl} target="_blank" rel="noreferrer">
           GitHub
+        </a>
+        <a href={discordUrl} target="_blank" rel="noreferrer">
+          Discord
         </a>
         <a href={baseScan} target="_blank" rel="noreferrer">
           BaseScan

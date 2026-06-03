@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SolidusLogo } from "../../components/solidus-logo";
+import { SiteHeader } from "../../components/site-header";
 import { WhitepaperMarkdown } from "../../components/whitepaper-markdown";
 import { WhitepaperToc } from "../../components/whitepaper-toc";
 import { getWhitepaperMarkdown, getWhitepaperToc } from "../../lib/whitepaper";
 
-const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/Wezzer42/solidus_mvp";
-const whitepaperSourceUrl = `${githubUrl.replace(/\/$/, "")}/blob/main/docs/WHITEPAPER.md`;
+const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/";
+const discordUrl = "https://discord.gg/x5mWWZH4";
 
 export const metadata: Metadata = {
   title: "Whitepaper | Solidus Testnet",
@@ -20,20 +20,7 @@ export default function WhitepaperPage() {
   return (
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d6e2ff] pb-4">
-          <SolidusLogo />
-          <div className="flex flex-wrap gap-2">
-            <Link href="/" className="btn-secondary">
-              Home
-            </Link>
-            <Link href="/market" className="btn-secondary">
-              Market
-            </Link>
-            <a className="btn-secondary" href={whitepaperSourceUrl} target="_blank" rel="noreferrer">
-              Source on GitHub
-            </a>
-          </div>
-        </header>
+        <SiteHeader />
 
         <details className="mt-6 rounded-xl border border-[#dce7ff] bg-white p-4 lg:hidden">
           <summary className="cursor-pointer text-sm font-bold text-[#0052ff]">Table of contents</summary>
@@ -58,6 +45,9 @@ export default function WhitepaperPage() {
               </Link>
               <a className="btn-secondary" href={githubUrl} target="_blank" rel="noreferrer">
                 GitHub
+              </a>
+              <a className="btn-secondary" href={discordUrl} target="_blank" rel="noreferrer">
+                Discord
               </a>
             </footer>
           </article>

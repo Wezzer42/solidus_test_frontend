@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { baseSepolia } from "viem/chains";
 import { formatEther, isAddress, type Address } from "viem";
 import { WalletBalances, ProtocolStats } from "../components/market-ui";
-import { SolidusLogo } from "../components/solidus-logo";
+import { SiteHeader } from "../components/site-header";
 import { hasContracts } from "../lib/contracts";
 import {
   fetchProtocolStats,
@@ -19,7 +19,6 @@ import {
 import { ethereum, revokeWalletAccess } from "../lib/wallet";
 
 const baseScan = "https://sepolia.basescan.org";
-const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/";
 
 type EthereumProvider = {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -204,15 +203,7 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
       <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-4 py-4 sm:px-6">
-        <header className="flex items-center justify-between border-b border-[#d6e2ff] pb-4">
-          <SolidusLogo />
-          <nav className="hidden items-center gap-5 text-sm font-medium text-[#3f5ea8] sm:flex">
-            <a href="/market">Market</a>
-            <a href="/whitepaper">Whitepaper</a>
-            <a href={githubUrl} target="_blank">GitHub</a>
-            <a href={baseScan} target="_blank">BaseScan</a>
-          </nav>
-        </header>
+        <SiteHeader />
 
         <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 py-10">
           <div>

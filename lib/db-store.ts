@@ -35,15 +35,25 @@ type RedisResult<T> = {
 function getRedisConfig() {
   const url =
     process.env.UPSTASH_REDIS_REST_URL?.trim() ||
+    process.env.UPSTASH_REDIS_REST_KV_REST_API_URL?.trim() ||
     process.env.KV_REST_API_URL?.trim() ||
     process.env.KV_URL?.trim();
   const token =
     process.env.UPSTASH_REDIS_REST_TOKEN?.trim() ||
+    process.env.UPSTASH_REDIS_REST_KV_REST_API_TOKEN?.trim() ||
     process.env.KV_REST_API_TOKEN?.trim() ||
     process.env.KV_TOKEN?.trim();
 
   if (!url || !token) return undefined;
   return { url, token };
+}
+
+function shouldUseRedis() {
+  if (getRedisConfig()) return true;
+  if (process.env.VERCEL) {
+    throw new Error("Redis is not configured for this Vercel deployment.");
+  }
+  return false;
 }
 
 async function runRedisCommand<T>(command: Array<string | number>): Promise<T> {
@@ -160,14 +170,14 @@ async function writeDb(db: SolidusDb) {
 
 export async function getFaucetClaim(address: string): Promise<FaucetClaimEntry | undefined> {
   const key = address.toLowerCase();
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     return getRedisFaucetClaim(key);
   }
   return (await readDb()).faucetClaims[key];
 }
 
 export async function reserveFaucetClaim(address: string, cooldownMs: number): Promise<number> {
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     return reserveRedisFaucetClaim(address, cooldownMs);
   }
 
@@ -199,7 +209,7 @@ export async function reserveFaucetClaim(address: string, cooldownMs: number): P
 }
 
 export async function finalizeFaucetClaim(address: string, lastClaimedAt: number, txHash: string, cooldownMs: number) {
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     await finalizeRedisFaucetClaim(address, lastClaimedAt, txHash, cooldownMs);
     return;
   }
@@ -224,7 +234,7 @@ export async function finalizeFaucetClaim(address: string, lastClaimedAt: number
 }
 
 export async function rollbackFaucetClaim(address: string, lastClaimedAt: number) {
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     await rollbackRedisFaucetClaim(address, lastClaimedAt);
     return;
   }
@@ -247,7 +257,7 @@ export async function rollbackFaucetClaim(address: string, lastClaimedAt: number
 }
 
 export async function reserveFaucetIpClaim(ip: string, cooldownMs: number): Promise<number> {
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     return reserveRedisFaucetIpClaim(ip, cooldownMs);
   }
 
@@ -279,7 +289,7 @@ export async function reserveFaucetIpClaim(ip: string, cooldownMs: number): Prom
 }
 
 export async function rollbackFaucetIpClaim(ip: string, lastClaimedAt: number) {
-  if (getRedisConfig()) {
+  if (shouldUseRedis()) {
     await rollbackRedisFaucetIpClaim(ip, lastClaimedAt);
     return;
   }

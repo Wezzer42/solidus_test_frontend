@@ -1,11 +1,10 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { formatEther } from "viem";
+import { baseScanUrl } from "../lib/site-nav";
+import { SiteMobileNav, SiteNavLinks } from "./site-nav-links";
 import { SolidusLogo } from "./solidus-logo";
-
-const githubUrl = process.env.NEXT_PUBLIC_GITHUB_URL || "https://github.com/";
-const discordUrl = "https://discord.gg/x5mWWZH4";
-const baseScan = "https://sepolia.basescan.org";
+import { TokenMark } from "./token-mark";
 
 export function MarketHeader({
   account,
@@ -19,39 +18,33 @@ export function MarketHeader({
   onDisconnect: () => void;
 }) {
   return (
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d6e2ff] pb-4">
-      <div>
-        <SolidusLogo />
-        <p className="mt-1 text-sm font-semibold text-[#496ab3]">Market · Base Sepolia</p>
-      </div>
-      <nav className="hidden items-center gap-5 text-sm font-medium text-[#3f5ea8] lg:flex">
-        <Link href="/">Home</Link>
-        <span className="font-bold text-[#0052ff]">Market</span>
-        <Link href="/whitepaper">Whitepaper</Link>
-        <a href={githubUrl} target="_blank" rel="noreferrer">
-          GitHub
-        </a>
-        <a href={discordUrl} target="_blank" rel="noreferrer">
-          Discord
-        </a>
-        <a href={baseScan} target="_blank" rel="noreferrer">
-          BaseScan
-        </a>
-      </nav>
-      <div className="flex shrink-0 flex-wrap gap-2">
-        {account ? (
-          <>
-            <span className="btn-secondary cursor-default px-4 py-3 font-mono text-sm">{account}</span>
-            <button className="btn-secondary" type="button" disabled={pending} onClick={onDisconnect}>
-              Disconnect
+    <header className="flex flex-col gap-3 border-b border-[#d6e2ff] pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <SolidusLogo />
+          <p className="mt-1 text-sm font-semibold text-[#496ab3]">Market · Base Sepolia</p>
+        </div>
+        <SiteNavLinks
+          activePage="market"
+          includeHome
+          className="hidden items-center gap-5 text-sm font-medium sm:flex"
+        />
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {account ? (
+            <>
+              <span className="btn-secondary cursor-default px-4 py-3 font-mono text-sm">{account}</span>
+              <button className="btn-secondary" type="button" disabled={pending} onClick={onDisconnect}>
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <button className="btn-primary" type="button" disabled={pending} onClick={onConnect}>
+              Connect wallet
             </button>
-          </>
-        ) : (
-          <button className="btn-primary" type="button" disabled={pending} onClick={onConnect}>
-            Connect wallet
-          </button>
-        )}
+          )}
+        </div>
       </div>
+      <SiteMobileNav activePage="market" includeHome />
     </header>
   );
 }
@@ -103,9 +96,9 @@ export function ProtocolStats({
   onRefresh?: () => void;
 }) {
   const items = [
-    { label: "Active FLOW", value: activeFlow, accent: "text-[#0052ff]", hint: "In circulation" },
-    { label: "Reserve FLOW", value: reserveFlow, accent: "text-[#335aa8]", hint: "Held by protocol" },
-    { label: "PRIME supply", value: primeSupply, accent: "text-[#c46a00]", hint: primeCap ? `Cap ${primeCap}` : "Total minted" },
+    { label: "Active FLOW", token: "FLOW" as const, value: activeFlow, accent: "text-[#53647d]", hint: "In circulation" },
+    { label: "Reserve FLOW", token: "FLOW" as const, value: reserveFlow, accent: "text-[#53647d]", hint: "Held by protocol" },
+    { label: "PRIME supply", token: "PRIME" as const, value: primeSupply, accent: "text-[#a96e00]", hint: primeCap ? `Cap ${primeCap}` : "Total minted" },
   ];
 
   return (
@@ -131,7 +124,10 @@ export function ProtocolStats({
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {items.map((item) => (
           <div key={item.label} className="rounded-xl border border-[#dce7ff] bg-white px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#6280c3]">{item.label}</p>
+            <div className="flex items-center gap-2">
+              <TokenMark token={item.token} className="size-7 shrink-0" />
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#6280c3]">{item.label}</p>
+            </div>
             <p className={`mt-1 font-display text-xl font-black tracking-[-0.04em] ${item.accent}`}>
               {loading ? "…" : item.value ?? "—"}
             </p>
@@ -161,9 +157,9 @@ export function WalletBalances({
   onDisconnect?: () => void;
 }) {
   const items = [
-    { label: "FLOW", value: flow, accent: "text-[#0052ff]", hint: "Liquid settlement token" },
-    { label: "PRIME", value: prime, accent: "text-[#c46a00]", hint: "Reserve-power token" },
-    { label: "ETH", value: eth, accent: "text-[#335aa8]", hint: "Gas on Base Sepolia" },
+    { label: "FLOW", token: "FLOW" as const, value: flow, accent: "text-[#53647d]", hint: "Liquid settlement token" },
+    { label: "PRIME", token: "PRIME" as const, value: prime, accent: "text-[#a96e00]", hint: "Reserve-power token" },
+    { label: "ETH", token: undefined, value: eth, accent: "text-[#335aa8]", hint: "Gas on Base Sepolia" },
   ];
 
   return (
@@ -173,7 +169,7 @@ export function WalletBalances({
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#6280c3]">Your wallet</p>
           <a
             className="mt-1 block font-mono text-sm font-semibold text-[#0052ff] hover:underline"
-            href={`${baseScan}/address/${account}`}
+            href={`${baseScanUrl}/address/${account}`}
             target="_blank"
             rel="noreferrer"
           >
@@ -197,7 +193,10 @@ export function WalletBalances({
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         {items.map((item) => (
           <div key={item.label} className="rounded-xl border border-[#eaf0ff] bg-[#f9fbff] px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#6280c3]">{item.label}</p>
+            <div className="flex items-center gap-2">
+              {item.token ? <TokenMark token={item.token} className="size-7 shrink-0" /> : null}
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#6280c3]">{item.label}</p>
+            </div>
             <p className={`mt-1 font-display text-xl font-black tracking-[-0.04em] ${item.accent}`}>
               {loading ? "…" : item.value ?? "—"}
             </p>
@@ -355,7 +354,7 @@ export function StatusBanner({
       {txHash ? (
         <a
           className="mt-2 block break-all text-sm text-[#dce7ff] underline"
-          href={`${baseScan}/tx/${txHash}`}
+          href={`${baseScanUrl}/tx/${txHash}`}
           target="_blank"
           rel="noreferrer"
         >

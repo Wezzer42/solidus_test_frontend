@@ -12,7 +12,11 @@ Public testnet: Base Sepolia (see Live Deployment).
 Short overview: docs/LITEPAPER.md
 ```
 
-Version: MVP live-test draft
+Version: MVP live-test draft (Base Sepolia v3)
+
+The service-wallet and multisig mechanics described in this draft are
+implemented and tested in the current source tree but require a full protocol
+redeploy. The listed Base Sepolia v3 contracts predate these changes.
 
 ## Abstract
 
@@ -35,7 +39,7 @@ PRIME stores reserve influence.
 
 Solidus is not designed as a stablecoin, proof-of-work asset, governance token, or passive yield product. The MVP goal is to test whether simple monetary mechanics can create resilient liquidity cycles under public live conditions.
 
-For a non-technical overview, see [Litepaper](https://github.com/Wezzer42/solidus_mvp/blob/main/docs/LITEPAPER.md).
+For a non-technical overview, see [LITEPAPER.md](./LITEPAPER.md).
 
 ## Why Solidus?
 
@@ -110,7 +114,7 @@ FLOW properties:
 - fixed total supply;
 - freely transferable;
 - used for settlement and movement;
-- pays a small protocol transfer fee;
+- standard user transfers pay a small protocol transfer fee;
 - refreshes activity state on transfer.
 
 FLOW is not designed primarily as a passive hoarding asset. Its monetary role is circulation.
@@ -143,6 +147,19 @@ The Reserve accumulates FLOW from:
 User transfers directly into the Reserve are forbidden. This prevents users from donating FLOW to the Reserve in order to manipulate PRIME redemption conditions.
 
 The Reserve can release FLOW only through PRIME redemption.
+
+### Reserve Account Rules
+
+Reserve is a protocol state, not a normal economic wallet:
+
+- inactivity pressure never applies to Reserve;
+- users cannot transfer FLOW directly into Reserve;
+- Reserve receives FLOW only from transfer fees, inactivity pressure, and owner-only launch seeding;
+- Reserve releases FLOW only through PRIME redemption;
+- Reserve release pays no FLOW fee and emits no PRIME;
+- Reserve cannot receive, mint, or burn PRIME on its own account;
+- Reserve owner has no arbitrary FLOW withdrawal function;
+- every release is bounded by the remaining per-block release budget.
 
 ## PRIME
 
@@ -177,24 +194,24 @@ founder allocation = 20% of cap
 
 Founder PRIME is inside total PRIME supply and therefore affects total scarcity and market supply.
 
-However, founder PRIME is excluded from public emission saturation:
+Founder PRIME is included in emission saturation:
 
 ```text
-public_emission_supply = max(0, PRIME_total_supply - founder_allocation)
-public_emission_cap = PRIME_cap - founder_allocation
+emission_supply = PRIME_total_supply
+emission_cap = PRIME_cap
 ```
 
-Therefore public participants start at:
+Therefore circulation rewards start at:
 
 ```text
-public emission saturation = 0%
+emission saturation = 20%
 ```
 
-This is intentional. The founder allocation should not suppress early public PRIME rewards.
+This is intentional. Founder reserve power must dilute emission in the same way as all other outstanding PRIME.
 
 ## FLOW Transfer Fee
 
-Every FLOW transfer pays a protocol fee.
+Every standard user FLOW transfer pays a protocol fee.
 
 MVP deployment:
 
@@ -216,18 +233,50 @@ Transfer fees serve four purposes:
 - connect movement to reserve pressure;
 - make meaningless circulation non-free.
 
+## Faucet Service Wallet
+
+The public testnet faucet is a permanently restricted service wallet. It exists
+only to distribute a predefined amount of test FLOW without changing the
+economic measurements of normal circulation.
+
+The owner multisig funds and locks the faucet atomically:
+
+```text
+fundServiceWallet(faucet, amount)
+```
+
+After registration:
+
+- the faucet can only send FLOW out;
+- all incoming FLOW transfers to the faucet revert;
+- outgoing faucet distributions pay no FLOW transfer fee;
+- outgoing faucet distributions emit no PRIME;
+- inactivity pressure cannot be collected from the faucet;
+- PRIME cannot be minted to or burned from the faucet, including by protocol operators;
+- the faucet cannot buy, sell, or redeem PRIME;
+- service-wallet status cannot be removed, including by the owner multisig.
+
+The faucet must hold zero PRIME before registration. Its FLOW balance is fixed
+at registration and can only decrease through outgoing distributions.
+
+This is a testnet distribution exception, not a general fee exemption system.
+Granting service-wallet status to ordinary economic actors would create a free
+FLOW routing bypass and invalidate circulation measurements.
+
 ## PRIME Emission
 
-PRIME is emitted from FLOW circulation.
+PRIME is emitted from standard FLOW circulation.
 
-On every FLOW transfer, the sender receives a PRIME emission quote based on eligible FLOW volume and public saturation.
+On every non-service FLOW transfer, the sender receives a PRIME emission quote
+based on eligible FLOW volume and total PRIME saturation. Faucet distributions
+do not emit PRIME.
 
 Deployment parameters:
 
 ```text
 circulationRewardBps = 2000   // 20% of FLOW volume is eligible
 baseEmissionBps      = 50     // 0.50% of eligible volume
-saturationPower      = 4
+saturationPower      = 1
 ```
 
 Raw emission:
@@ -237,7 +286,7 @@ eligible_volume = FLOW_volume * 20%
 raw_PRIME = eligible_volume * 0.50%
 ```
 
-At zero public saturation:
+Before any PRIME exists:
 
 ```text
 1 FLOW transferred -> 0.001 PRIME
@@ -245,23 +294,23 @@ At zero public saturation:
 
 ### Public Saturation Curve
 
-Public saturation excludes founder allocation:
+Emission saturation includes all outstanding PRIME:
 
 ```text
-public_fill =
-public_emission_supply / public_emission_cap
+fill =
+PRIME_total_supply / PRIME_cap
 ```
 
 Remaining public capacity:
 
 ```text
-remaining = 1 - public_fill
+remaining = 1 - fill
 ```
 
 Emission multiplier:
 
 ```text
-saturation_multiplier = remaining ^ 4
+saturation_multiplier = remaining
 ```
 
 Final emission:
@@ -271,7 +320,13 @@ PRIME_minted =
 raw_PRIME * saturation_multiplier
 ```
 
-This creates aggressive early emission and hard late scarcity.
+At launch, founder allocation fills 20% of cap:
+
+```text
+launch emission multiplier = 1 - 20% = 80%
+```
+
+This preserves strong early emission while making all outstanding PRIME economically relevant.
 
 ### Emission Interpretation
 
@@ -280,7 +335,7 @@ The early phase is intentionally a Prime Rush.
 Meaningless farming is not fully prevented at launch. Instead, it is made temporary:
 
 - early PRIME is easy to earn;
-- public saturation rises;
+- total saturation rises;
 - emission efficiency decays;
 - cost per new PRIME increases;
 - loops become less attractive over time.
@@ -316,17 +371,11 @@ The stronger signal wins:
 signal = max(active_ratio_stress, prime_scarcity)
 ```
 
-Per-PRIME payout signal:
+Redemption signal:
 
 ```text
-payout_per_PRIME_signal =
-maxClaimPerPrime * signal
-```
-
-Deployment:
-
-```text
-maxClaimPerPrime = 5 FLOW
+redemption_signal =
+max(active_ratio_stress, prime_scarcity)
 ```
 
 ## Active-Ratio Stress
@@ -376,15 +425,11 @@ PRIME_total_supply = 20% of cap
 prime_scarcity = 80%
 ```
 
-Therefore the scarcity signal at genesis is:
-
-```text
-5 FLOW * 80% = 4 FLOW / PRIME
-```
+Therefore the scarcity signal at genesis is `80%`.
 
 ## Pro-Rata Reserve Backing
 
-The Reserve cannot pay more than the pro-rata backing of a PRIME amount:
+PRIME redemption starts from the pro-rata backing of a PRIME amount:
 
 ```text
 pro_rata_claim =
@@ -395,7 +440,7 @@ Budget-free redemption floor:
 
 ```text
 redeem_floor =
-min(pro_rata_claim, PRIME_amount * payout_per_PRIME_signal)
+pro_rata_claim * redemption_signal
 ```
 
 This floor is used by `PrimeMarket` to prevent PRIME sell orders below current redemption value.
@@ -418,7 +463,9 @@ quoteRedeem =
 min(redeem_floor, remaining_block_budget)
 ```
 
-The budget exists to prevent a single transaction from draining the Reserve.
+If the requested PRIME amount exceeds the remaining block budget, the protocol burns only the proportional PRIME amount required for the actual FLOW release. Excess PRIME remains with the holder.
+
+The budget exists to prevent a single transaction from draining the Reserve without causing accidental PRIME overburn.
 
 ## Launch Reserve Seeding
 
@@ -446,13 +493,13 @@ At launch, active-ratio stress and scarcity are both approximately 80%:
 active_ratio = 50%
 active_ratio_stress = (90 - 50) / (90 - 40) = 80%
 prime_scarcity = 80%
-payout signal = 5 FLOW * 80% = 4 FLOW / PRIME
+redemption_signal = 80%
 ```
 
-Therefore the intended launch floor is approximately:
+Therefore launch redemption power is approximately:
 
 ```text
-1 PRIME -> up to 4 FLOW
+pro-rata reserve share * 80%
 ```
 
 subject to pro-rata reserve backing and per-block budget.
@@ -542,10 +589,10 @@ FLOW circulates
 -> transfer fees enter Reserve
 -> inactive FLOW enters Reserve
 -> FLOW circulation emits PRIME
--> PRIME becomes harder to earn as public saturation rises
+-> PRIME becomes harder to earn as total saturation rises
 -> PRIME redeems Reserve FLOW
 -> redemption burns PRIME
--> burn reopens public emission headroom
+-> burn reopens emission headroom
 -> FLOW returns to active circulation
 ```
 
@@ -555,7 +602,7 @@ This is a mint-burn cycle, not one-way inflation.
 
 ### Phase 1: Prime Rush
 
-Early public saturation is low.
+Early total saturation starts at the founder allocation and remains relatively low.
 
 Effects:
 
@@ -592,7 +639,7 @@ Effects:
 When PRIME is redeemed:
 
 - PRIME is burned;
-- public saturation decreases;
+- total saturation decreases;
 - emission headroom reopens;
 - future FLOW circulation can mint more PRIME.
 
@@ -636,7 +683,7 @@ Founder PRIME is 20% of cap.
 
 Trade-off:
 
-- does not suppress public emission;
+- suppresses launch emission according to its 20% share;
 - does increase total market supply;
 - can create sell pressure in P2P markets.
 
@@ -649,7 +696,7 @@ At launch:
 ```text
 1 FLOW transfer fee cost ~= 0.001 FLOW
 1 FLOW transfer emission ~= 0.001 PRIME
-launch signal ~= 4 FLOW / PRIME
+release value depends on reserve density, redemption signal, and block budget
 ```
 
 This means early circulation can have positive reserve-backed expected value.
@@ -668,6 +715,9 @@ Current protections include:
 
 - PRIME direct transfer disabled;
 - PRIME approval disabled;
+- permanently restricted faucet service wallet;
+- incoming FLOW to the faucet disabled;
+- faucet fee, inactivity, PRIME mint, PRIME burn, market, and redemption paths disabled;
 - FLOW direct transfer to Reserve disabled;
 - PrimeMarket floor check;
 - PrimeMarket settlement re-validation;
@@ -705,6 +755,17 @@ v3 — enumerable PRIME/FLOW market, dual-signal redemption, 50% reserve pre-see
 
 Chain ID: `84532` (Base Sepolia).
 
+Public UI: separate **`solidus-frontend`** repository. Configure the four contract addresses above in frontend `.env.local`.
+
+### Deprecated testnet deployments
+
+Do not use these addresses after the v3 redeploy:
+
+| Version | FlowToken | PrimeToken | Reserve | PrimeMarket |
+|---------|-----------|------------|---------|-------------|
+| v2 | `0xa0279255A3465A1e050492a06eCB23Ee77Fa3877` | `0xD3fe2b908A19a66C03d0d7E64E6A46CA909770D5` | `0xd4f50053150364e0913c7caB0b12f96864C574d1` | `0xE37302f26b2a908B3d64D4cEe5D26E815c1d484f` |
+| v1 | `0x136F24F4dBE9E14960104307Dc11AAab85B4B5C7` | `0xfe27ff725e47ABDa0D2c35c3cbB9538700f6C9f8` | `0xAC86181E356c326467140F2309eeae6c8fA84C03` | — |
+
 ## Deployment Parameters
 
 MVP deployment constants:
@@ -719,8 +780,8 @@ inactivity period        = 30 days
 inactivity pressure      = 1.00%
 baseEmissionBps          = 50
 circulationRewardBps     = 2000
-saturationPower          = 4
-maxClaimPerPrime         = 5 FLOW
+saturationPower          = 1
+maxClaimPerPrime         = deprecated compatibility field
 maxReleaseBps            = 250
 maxRedeemActiveRatioBps  = 9000
 minRedeemActiveRatioBps  = 4000
@@ -743,7 +804,7 @@ The system is healthy if:
 - FLOW continues to circulate;
 - Reserve does not become permanently frozen;
 - PRIME emission saturates and reopens through burn cycles;
-- loop farming becomes less attractive as public saturation rises;
+- loop farming becomes less attractive as total saturation rises;
 - Reserve release restores active liquidity without violating FLOW supply invariance.
 
 The live test should be evaluated as an economic experiment, not as a finished monetary system.

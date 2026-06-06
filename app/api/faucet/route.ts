@@ -3,13 +3,26 @@ import { createPublicClient, createWalletClient, http, isAddress, parseEther } f
 import { privateKeyToAccount } from "viem/accounts";
 import { baseSepolia } from "viem/chains";
 import { addresses, flowAbi } from "../../../lib/contracts";
-import { getFaucetClaim, setFaucetClaim } from "../../../lib/db-store";
+import {
+  FaucetCooldownError,
+  finalizeFaucetClaim,
+  reserveFaucetIpClaim,
+  reserveFaucetClaim,
+  rollbackFaucetIpClaim,
+  rollbackFaucetClaim,
+} from "../../../lib/db-store";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 const faucetAmount = parseEther("1000000");
 const cooldownMs = 24 * 60 * 60 * 1000;
+
+function getClientIp(request: Request) {
+  const forwardedFor = request.headers.get("x-forwarded-for");
+  if (!forwardedFor) return undefined;
+  return forwardedFor.split(",")[0]?.trim() || undefined;
+}
 
 export async function GET() {
   try {
@@ -70,11 +83,17 @@ export async function POST(request: Request) {
     }
 
     const key = address.toLowerCase();
-    const previous = (await getFaucetClaim(key))?.lastClaimedAt || 0;
-    const now = Date.now();
-    if (now - previous < cooldownMs) {
-      const hoursLeft = Math.ceil((cooldownMs - (now - previous)) / (60 * 60 * 1000));
-      return NextResponse.json({ error: `Faucet cooldown active. Try again in about ${hoursLeft}h.` }, { status: 429 });
+    const clientIp = getClientIp(request);
+    const ipReservedAt = clientIp ? await reserveFaucetIpClaim(clientIp, cooldownMs) : undefined;
+
+    let reservedAt: number;
+    try {
+      reservedAt = await reserveFaucetClaim(key, cooldownMs);
+    } catch (error) {
+      if (clientIp && ipReservedAt !== undefined) {
+        await rollbackFaucetIpClaim(clientIp, ipReservedAt);
+      }
+      throw error;
     }
 
     const account = privateKeyToAccount(privateKey as `0x${string}`);
@@ -84,16 +103,29 @@ export async function POST(request: Request) {
       transport: http(rpcUrl),
     });
 
-    const hash = await walletClient.writeContract({
-      address: addresses.flow,
-      abi: flowAbi,
-      functionName: "transfer",
-      args: [address, faucetAmount],
-    });
+    try {
+      const hash = await walletClient.writeContract({
+        address: addresses.flow,
+        abi: flowAbi,
+        functionName: "transfer",
+        args: [address, faucetAmount],
+      });
 
-    await setFaucetClaim(key, hash);
-    return NextResponse.json({ hash });
+      await finalizeFaucetClaim(key, reservedAt, hash, cooldownMs);
+      return NextResponse.json({ hash });
+    } catch (error) {
+      if (clientIp && ipReservedAt !== undefined) {
+        await rollbackFaucetIpClaim(clientIp, ipReservedAt);
+      }
+      await rollbackFaucetClaim(key, reservedAt);
+      throw error;
+    }
   } catch (error) {
+    if (error instanceof FaucetCooldownError) {
+      const hoursLeft = Math.ceil(error.retryAfterMs / (60 * 60 * 1000));
+      return NextResponse.json({ error: `Faucet cooldown active. Try again in about ${hoursLeft}h.` }, { status: 429 });
+    }
+
     const message = error instanceof Error ? error.message : "Faucet request failed.";
     return NextResponse.json({ error: message }, { status: 500 });
   }

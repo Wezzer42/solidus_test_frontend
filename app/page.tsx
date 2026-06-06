@@ -231,7 +231,7 @@ export default function Home() {
           <section className="rounded-2xl bg-[#eaf0ff] p-5">
             <h2 className="font-display text-3xl font-black tracking-[-0.06em]">Get test FLOW</h2>
             <p className="mt-2 text-sm leading-6 text-[#3a589b]">
-              Faucet is available once per 24 hours for each wallet.
+              Faucet is available once per 24 hours. Fee-free, no-PRIME distributions activate after the next protocol redeploy.
             </p>
             <p className="mt-1 text-sm font-semibold text-[#35549a]">
               Available to distribute: {faucetRemaining ? `${faucetRemaining} FLOW` : "Loading..."}

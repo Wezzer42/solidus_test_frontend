@@ -20,7 +20,7 @@ export default function WhitepaperPage() {
   return (
     <main className="min-h-screen bg-[#f3f7ff] text-[#0b1736]">
       <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
-        <SiteHeader />
+        <SiteHeader activePage="whitepaper" />
 
         <details className="mt-6 rounded-xl border border-[#dce7ff] bg-white p-4 lg:hidden">
           <summary className="cursor-pointer text-sm font-bold text-[#0052ff]">Table of contents</summary>

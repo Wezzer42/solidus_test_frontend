@@ -748,10 +748,10 @@ v3 — enumerable PRIME/FLOW market, dual-signal redemption, 50% reserve pre-see
 
 | Contract | Address | Explorer |
 |----------|---------|----------|
-| FlowToken | `0xBC9c05E0397Ab2C52F08a3F86a13541AC5045F60` | [Basescan](https://sepolia.basescan.org/address/0xbc9c05e0397ab2c52f08a3f86a13541ac5045f60#code) |
-| PrimeToken | `0x90a0535cB8Fbe144E4b975E4ba8570760074d374` | [Basescan](https://sepolia.basescan.org/address/0x90a0535cb8fbe144e4b975e4ba8570760074d374#code) |
-| Reserve | `0x7501418DbBC6fBB8a7f60BACd07b02C13786bE66` | [Basescan](https://sepolia.basescan.org/address/0x7501418dbbc6fbb8a7f60bacd07b02c13786be66#code) |
-| PrimeMarket | `0xBFcA4aBD77c90E355C6e257cb619F5562c4FeD3f` | [Basescan](https://sepolia.basescan.org/address/0xbfca4abd77c90e355c6e257cb619f5562c4fed3f#code) |
+| FlowToken | `0x8716ee2506f217Fa09978dF9De66Dce1FFC8057d` | [Basescan](https://sepolia.basescan.org/address/0x8716ee2506f217fa09978df9de66dce1ffc8057d#code) |
+| PrimeToken | `0x2ae008f3C2F04B989B08eD0ccB222BAA86a32ABE` | [Basescan](https://sepolia.basescan.org/address/0x2ae008f3c2f04b989b08ed0ccb222baa86a32abe#code) |
+| Reserve | `0xb594e23f28CCC4fe0b5ab3Fc29a3EA50eD410388` | [Basescan](https://sepolia.basescan.org/address/0xb594e23f28ccc4fe0b5ab3fc29a3ea50ed410388#code) |
+| PrimeMarket | `0x5Ed062d69cE49be159e37a75A657Dbb557539dc4` | [Basescan](https://sepolia.basescan.org/address/0x5ed062d69ce49be159e37a75a657dbb557539dc4#code) |
 
 Chain ID: `84532` (Base Sepolia).
 

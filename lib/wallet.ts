@@ -11,6 +11,8 @@ export type WalletConnectionKind = "injected" | "walletconnect";
 
 let activeKind: WalletConnectionKind | null = null;
 let bootstrapPromise: Promise<WalletBootstrapResult> | null = null;
+let connectInjectedPromise: Promise<EthereumProvider> | null = null;
+let connectWalletConnectPromise: Promise<EthereumProvider> | null = null;
 
 export type WalletBootstrapResult = {
   hasInjected: boolean;
@@ -119,39 +121,82 @@ export async function revokeWalletAccess(provider: EthereumProvider) {
   }
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
+
+function getErrorCode(error: unknown) {
+  if (typeof error === "object" && error && "code" in error) {
+    return (error as { code: unknown }).code;
+  }
+  return undefined;
+}
+
 export function formatInjectedWalletError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
+  const message = getErrorMessage(error);
+  const code = getErrorCode(error);
+
+  if (code === -32002 || /already pending/i.test(message)) {
+    return "MetaMask is already waiting for approval. Open the MetaMask popup and confirm the request.";
+  }
+
   if (/metamask extension not found|failed to connect to metamask|disconnected from metamask background/i.test(message)) {
     return "MetaMask lost connection. Reload the page, unlock MetaMask, then click MetaMask again. Or use WalletConnect.";
   }
+
   return message;
 }
 
 export async function connectInjectedWallet() {
+  if (connectInjectedPromise) return connectInjectedPromise;
+
   const provider = ethereum();
   if (!provider || typeof provider.request !== "function") {
     throw new Error("Install MetaMask or open this site in your wallet browser.");
   }
 
-  try {
-    await provider.request({ method: "eth_requestAccounts" });
-  } catch (error) {
-    throw new Error(formatInjectedWalletError(error));
-  }
+  connectInjectedPromise = (async () => {
+    try {
+      await provider.request({ method: "eth_requestAccounts" });
+      activeKind = "injected";
+      return provider;
+    } catch (error) {
+      throw new Error(formatInjectedWalletError(error));
+    }
+  })();
 
-  activeKind = "injected";
-  return provider;
+  try {
+    return await connectInjectedPromise;
+  } finally {
+    connectInjectedPromise = null;
+  }
 }
 
 export async function connectWalletConnectWallet() {
-  const provider = await connectWalletConnectProvider();
-  activeKind = "walletconnect";
-  return provider;
+  if (connectWalletConnectPromise) return connectWalletConnectPromise;
+
+  connectWalletConnectPromise = (async () => {
+    const provider = await connectWalletConnectProvider();
+    activeKind = "walletconnect";
+    return provider;
+  })();
+
+  try {
+    return await connectWalletConnectPromise;
+  } finally {
+    connectWalletConnectPromise = null;
+  }
 }
 
 export async function disconnectActiveWallet() {
   const kind = activeKind;
   activeKind = null;
+  connectInjectedPromise = null;
+  connectWalletConnectPromise = null;
 
   if (kind === "walletconnect") {
     await disconnectWalletConnectProvider();

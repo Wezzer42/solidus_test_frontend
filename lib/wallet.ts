@@ -3,6 +3,7 @@ import {
   disconnectWalletConnectProvider,
   getCachedWalletConnectProvider,
   getWalletConnectProvider,
+  hasStoredWalletConnectSession,
   isWalletConnectConfigured,
 } from "./wallet-connect";
 import type { EthereumProvider } from "./wallet-provider";
@@ -28,6 +29,16 @@ export { isWalletConnectConfigured };
 function isMobileBrowser() {
   if (typeof navigator === "undefined") return false;
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+export { isMobileBrowser };
+
+export function getMetaMaskMobileDappLink(pathname = "/") {
+  if (typeof window === "undefined") return undefined;
+
+  const host = window.location.host;
+  const dappPath = pathname === "/" || pathname === "" ? host : `${host}${pathname.startsWith("/") ? pathname : `/${pathname}`}`;
+  return `https://metamask.app.link/dapp/${dappPath}`;
 }
 
 export function shouldProbeInjectedWallet() {
@@ -71,7 +82,7 @@ async function readInjectedSession() {
 }
 
 async function readWalletConnectSession() {
-  if (!isWalletConnectConfigured()) return undefined;
+  if (!isWalletConnectConfigured() || !hasStoredWalletConnectSession()) return undefined;
 
   const walletConnect = await getWalletConnectProvider();
   if (!walletConnect.session) return undefined;
@@ -200,6 +211,7 @@ export async function disconnectActiveWallet() {
 
   if (kind === "walletconnect") {
     await disconnectWalletConnectProvider();
+    bootstrapPromise = null;
     return;
   }
 

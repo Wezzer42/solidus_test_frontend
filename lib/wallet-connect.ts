@@ -8,6 +8,19 @@ export function isWalletConnectConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim());
 }
 
+/** Lightweight check — avoids loading @walletconnect/ethereum-provider on every page visit. */
+export function hasStoredWalletConnectSession() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    return Object.keys(localStorage).some(
+      (key) => key.startsWith("wc@2:") && key.includes("session"),
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function getCachedWalletConnectProvider() {
   return providerInstance ?? undefined;
 }

@@ -1,3 +1,8 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { getMetaMaskMobileDappLink, isMobileBrowser } from "../lib/wallet";
+
 export function WalletConnectButtons({
   pending,
   hasInjectedWallet,
@@ -11,16 +16,34 @@ export function WalletConnectButtons({
   onConnectInjected: () => void;
   onConnectWalletConnect: () => void;
 }) {
-  if (!hasInjectedWallet && !walletConnectEnabled) {
+  const [openInMetaMaskHref, setOpenInMetaMaskHref] = useState<string>();
+
+  useEffect(() => {
+    if (hasInjectedWallet) {
+      setOpenInMetaMaskHref(undefined);
+      return;
+    }
+
+    if (isMobileBrowser()) {
+      setOpenInMetaMaskHref(getMetaMaskMobileDappLink(window.location.pathname));
+    }
+  }, [hasInjectedWallet]);
+
+  if (!hasInjectedWallet && !walletConnectEnabled && !openInMetaMaskHref) {
     return (
       <span className="text-sm font-semibold text-[#496ab3]">
-        Install MetaMask or configure WalletConnect.
+        Install MetaMask on desktop, or open this site in the MetaMask app on mobile.
       </span>
     );
   }
 
   return (
     <>
+      {openInMetaMaskHref ? (
+        <a className="btn-primary" href={openInMetaMaskHref}>
+          Open in MetaMask
+        </a>
+      ) : null}
       {hasInjectedWallet ? (
         <button className="btn-primary" type="button" disabled={pending} onClick={onConnectInjected}>
           MetaMask
@@ -28,7 +51,7 @@ export function WalletConnectButtons({
       ) : null}
       {walletConnectEnabled ? (
         <button
-          className={hasInjectedWallet ? "btn-secondary" : "btn-primary"}
+          className={hasInjectedWallet || openInMetaMaskHref ? "btn-secondary" : "btn-primary"}
           type="button"
           disabled={pending}
           onClick={onConnectWalletConnect}
@@ -36,9 +59,14 @@ export function WalletConnectButtons({
           WalletConnect
         </button>
       ) : null}
+      {openInMetaMaskHref && !walletConnectEnabled ? (
+        <p className="w-full text-xs leading-5 text-[#496ab3]">
+          Opens the site inside the MetaMask app so you can connect your wallet.
+        </p>
+      ) : null}
       {!hasInjectedWallet && walletConnectEnabled ? (
         <p className="w-full text-xs leading-5 text-[#496ab3]">
-          On mobile, use WalletConnect to open MetaMask.
+          On mobile, tap Open in MetaMask or WalletConnect.
         </p>
       ) : null}
     </>

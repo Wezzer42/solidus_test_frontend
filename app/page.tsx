@@ -1,9 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { baseSepolia } from "viem/chains";
 import { formatEther, isAddress, type Address } from "viem";
-import { WalletBalances, ProtocolStats } from "../components/market-ui";
+import { WalletBalances, ProtocolStats, StatusBanner } from "../components/market-ui";
 import { SiteHeader } from "../components/site-header";
 import { hasContracts } from "../lib/contracts";
 import {
@@ -16,15 +15,19 @@ import {
   formatTokenAmount,
   type WalletBalanceSnapshot,
 } from "../lib/wallet-balances";
-import { ethereum, revokeWalletAccess } from "../lib/wallet";
-
-const baseScan = "https://sepolia.basescan.org";
-
-type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
-};
+import { WalletConnectButtons } from "../components/wallet-connect-buttons";
+import { ensureBaseSepolia } from "../lib/ensure-base-sepolia";
+import {
+  bindWalletProvider,
+  connectInjectedWallet,
+  connectWalletConnectWallet,
+  disconnectActiveWallet,
+  getWalletProvider,
+  hasInjectedWallet,
+  isWalletConnectConfigured,
+  readWalletState,
+  restoreWalletSession,
+} from "../lib/wallet";
 
 export default function Home() {
   const [status, setStatus] = useState("");
@@ -37,6 +40,8 @@ export default function Home() {
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [protocolStats, setProtocolStats] = useState<ProtocolStatsSnapshot>();
   const [loadingProtocolStats, setLoadingProtocolStats] = useState(false);
+  const [hasInjected, setHasInjected] = useState(false);
+  const walletConnectEnabled = isWalletConnectConfigured();
   const contractsReady = hasContracts();
 
   const watchedAddress = (() => {
@@ -104,64 +109,76 @@ export default function Home() {
   }, [watchedAddress, loadWalletBalances]);
 
   useEffect(() => {
-    const provider = ethereum();
-    if (!provider) return;
+    setHasInjected(hasInjectedWallet());
+  }, []);
 
-    const onAccountsChanged = (accounts: unknown) => {
-      const next = (accounts as Address[])[0];
-      setConnectedAddress(next);
-      if (!next && !targetAddress.trim()) setWalletBalances(undefined);
+  useEffect(() => {
+    let unbind: (() => void) | undefined;
+    let disposed = false;
+
+    async function bootstrap() {
+      const session = await restoreWalletSession();
+      if (disposed || !session) return;
+
+      unbind = bindWalletProvider(session.provider, {
+        onAccountsChanged: (accounts) => {
+          const next = accounts[0] as Address | undefined;
+          setConnectedAddress(next);
+          if (!next && !targetAddress.trim()) setWalletBalances(undefined);
+        },
+        onChainChanged: () => undefined,
+      });
+
+      const state = await readWalletState(session.provider);
+      if (disposed || !state.account) return;
+      setConnectedAddress(state.account);
+    }
+
+    void bootstrap();
+    return () => {
+      disposed = true;
+      unbind?.();
     };
-
-    provider.request({ method: "eth_accounts" }).then((accounts) => {
-      const next = (accounts as Address[])[0];
-      if (next) setConnectedAddress(next);
-    });
-
-    const eth = provider as EthereumProvider;
-    eth.on?.("accountsChanged", onAccountsChanged);
-    return () => eth.removeListener?.("accountsChanged", onAccountsChanged);
   }, [targetAddress]);
 
-  function disconnectWallet() {
-    const provider = ethereum();
-    if (provider) void revokeWalletAccess(provider);
+  async function connectInjected() {
+    setPending(true);
+    setStatus("");
+    try {
+      const provider = await connectInjectedWallet();
+      await ensureBaseSepolia(provider);
+      const state = await readWalletState(provider);
+      setConnectedAddress(state.account);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Connect failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function connectWalletConnect() {
+    setPending(true);
+    setStatus("");
+    try {
+      const provider = await connectWalletConnectWallet();
+      await ensureBaseSepolia(provider);
+      const state = await readWalletState(provider);
+      setConnectedAddress(state.account);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "WalletConnect failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function disconnectWallet() {
+    await disconnectActiveWallet();
     setConnectedAddress(undefined);
     if (!targetAddress.trim()) setWalletBalances(undefined);
   }
 
-  async function ensureBaseSepolia(provider: EthereumProvider) {
-    const chainIdHex = `0x${baseSepolia.id.toString(16)}`;
-    const rpcUrl = process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC?.trim() || "https://sepolia.base.org";
-    const currentChain = (await provider.request({ method: "eth_chainId" })) as string;
-    if (Number(currentChain) === baseSepolia.id) return;
-
-    try {
-      await provider.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: chainIdHex }],
-      });
-    } catch (error) {
-      if ((error as { code?: number }).code !== 4902) throw error;
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: chainIdHex,
-            chainName: baseSepolia.name,
-            nativeCurrency: baseSepolia.nativeCurrency,
-            rpcUrls: [rpcUrl],
-            blockExplorerUrls: [baseSepolia.blockExplorers?.default.url],
-          },
-        ],
-      });
-    }
-  }
-
   async function getFlow() {
     if (!contractsReady) return setStatus("App is missing contract addresses.");
-    const provider = ethereum();
-    if (!provider) return setStatus("Install MetaMask or another browser wallet.");
 
     setPending(true);
     setFaucetHash(undefined);
@@ -173,12 +190,23 @@ export default function Home() {
         if (!isAddress(typed)) throw new Error("Invalid wallet address.");
         account = typed;
       } else {
+        let provider = getWalletProvider();
+        if (!provider) {
+          if (hasInjected) {
+            provider = await connectInjectedWallet();
+          } else if (walletConnectEnabled) {
+            throw new Error("Connect with WalletConnect first, or paste your wallet address.");
+          } else {
+            throw new Error("Install MetaMask, connect with WalletConnect, or paste your wallet address.");
+          }
+        }
+
         const accounts = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
         account = accounts[0];
         if (!account) throw new Error("Wallet address not found.");
         setConnectedAddress(account);
+        await ensureBaseSepolia(provider);
       }
-      await ensureBaseSepolia(provider);
 
       const response = await fetch("/api/faucet", {
         method: "POST",
@@ -245,6 +273,17 @@ export default function Home() {
                 onChange={(event) => setTargetAddress(event.target.value)}
               />
             </label>
+            {!targetAddress.trim() && !connectedAddress ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <WalletConnectButtons
+                  pending={pending}
+                  hasInjectedWallet={hasInjected}
+                  walletConnectEnabled={walletConnectEnabled}
+                  onConnectInjected={connectInjected}
+                  onConnectWalletConnect={connectWalletConnect}
+                />
+              </div>
+            ) : null}
             <button className="btn-primary mt-4 w-full sm:w-auto" disabled={pending} onClick={getFlow}>
               Get FLOW
             </button>
@@ -272,18 +311,18 @@ export default function Home() {
             </p>
           </section>
 
-          {(status || faucetHash) && (
-            <section className="rounded-2xl border border-[#dce7ff] bg-white p-4 text-sm font-semibold text-[#35549a]">
-              <p>{status}</p>
-              {faucetHash && (
-                <a className="mt-2 block break-all text-sm font-semibold text-[#0052ff]" href={`${baseScan}/tx/${faucetHash}`} target="_blank">
-                  {faucetHash}
-                </a>
-              )}
-            </section>
-          )}
         </div>
       </div>
+      {status ? (
+        <StatusBanner
+          message={status}
+          txHash={faucetHash}
+          onClose={() => {
+            setStatus("");
+            setFaucetHash(undefined);
+          }}
+        />
+      ) : null}
     </main>
   );
 }

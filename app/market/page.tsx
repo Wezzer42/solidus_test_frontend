@@ -49,7 +49,19 @@ import {
   type ProtocolStatsSnapshot,
 } from "../../lib/protocol-stats";
 import { checkPaymentToken, isBlockedPaymentToken, type TokenCheckResult } from "../../lib/token-check";
-import { ethereum, revokeWalletAccess, shortAddress } from "../../lib/wallet";
+import { ensureBaseSepolia } from "../../lib/ensure-base-sepolia";
+import {
+  bindWalletProvider,
+  connectInjectedWallet,
+  connectWalletConnectWallet,
+  disconnectActiveWallet,
+  getWalletProvider,
+  hasInjectedWallet,
+  isWalletConnectConfigured,
+  readWalletState,
+  restoreWalletSession,
+  shortAddress,
+} from "../../lib/wallet";
 
 type MarketOrderRow = {
   id: bigint;
@@ -71,12 +83,6 @@ type FlowOrderRow = {
   tokenReadable: boolean;
 };
 
-type EthereumProvider = {
-  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-  on?: (event: string, handler: (...args: unknown[]) => void) => void;
-  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
-};
-
 const nativeToken = "0x0000000000000000000000000000000000000000" as Address;
 
 function publicClient() {
@@ -87,8 +93,8 @@ function publicClient() {
 }
 
 function walletClient(account: Address) {
-  const provider = ethereum();
-  if (!provider) throw new Error("Wallet not found.");
+  const provider = getWalletProvider();
+  if (!provider) throw new Error("Wallet not connected.");
   return createWalletClient({ account, chain: baseSepolia, transport: custom(provider) });
 }
 
@@ -136,6 +142,8 @@ export default function MarketPage() {
   const [status, setStatus] = useState("");
   const [pending, setPending] = useState(false);
   const [txHash, setTxHash] = useState<`0x${string}`>();
+  const [hasInjected, setHasInjected] = useState(false);
+  const walletConnectEnabled = isWalletConnectConfigured();
 
   const wrongNetwork = Boolean(account && chainId !== baseSepolia.id);
   const contractsReady = hasContracts();
@@ -360,59 +368,77 @@ export default function MarketPage() {
   }, [loadBalances]);
 
   useEffect(() => {
-    const provider = ethereum();
-    if (!provider) return;
+    setHasInjected(hasInjectedWallet());
+  }, []);
 
-    const onAccountsChanged = (accounts: unknown) => {
-      const next = (accounts as Address[])[0];
-      setAccount(next);
-      if (!next) {
-        setBalances(undefined);
-        setChainId(undefined);
-        setTokenCheck(undefined);
-      }
-    };
-    const onChainChanged = (hexChain: unknown) => {
-      setChainId(Number(hexChain));
-    };
+  useEffect(() => {
+    let unbind: (() => void) | undefined;
+    let disposed = false;
 
-    provider.request({ method: "eth_accounts" }).then((accounts) => {
-      const next = (accounts as Address[])[0];
-      if (next) {
-        setAccount(next);
-        provider.request({ method: "eth_chainId" }).then((hexChain) => setChainId(Number(hexChain)));
-      }
-    });
+    async function bootstrap() {
+      const session = await restoreWalletSession();
+      if (disposed || !session) return;
 
-    const eth = provider as EthereumProvider;
-    eth.on?.("accountsChanged", onAccountsChanged);
-    eth.on?.("chainChanged", onChainChanged);
+      unbind = bindWalletProvider(session.provider, {
+        onAccountsChanged: (accounts) => {
+          const next = accounts[0] as Address | undefined;
+          setAccount(next);
+          if (!next) {
+            setBalances(undefined);
+            setChainId(undefined);
+            setTokenCheck(undefined);
+          }
+        },
+        onChainChanged: (chainId) => setChainId(chainId),
+      });
+
+      const state = await readWalletState(session.provider);
+      if (disposed) return;
+      setAccount(state.account);
+      setChainId(state.chainId);
+    }
+
+    void bootstrap();
     return () => {
-      eth.removeListener?.("accountsChanged", onAccountsChanged);
-      eth.removeListener?.("chainChanged", onChainChanged);
+      disposed = true;
+      unbind?.();
     };
   }, []);
 
-  async function connect() {
-    const provider = ethereum();
-    if (!provider) return setStatus("Install MetaMask.");
+  async function syncWalletState(provider: NonNullable<ReturnType<typeof getWalletProvider>>) {
+    await ensureBaseSepolia(provider);
+    const state = await readWalletState(provider);
+    setAccount(state.account);
+    setChainId(state.chainId);
+    setStatus("");
+  }
+
+  async function connectInjected() {
     setPending(true);
     try {
-      const accounts = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
-      const hexChain = (await provider.request({ method: "eth_chainId" })) as string;
-      setAccount(accounts[0]);
-      setChainId(Number(hexChain));
-      setStatus("");
-    } catch (e) {
-      setStatus(e instanceof Error ? e.message : "Connect failed.");
+      const provider = await connectInjectedWallet();
+      await syncWalletState(provider);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Connect failed.");
     } finally {
       setPending(false);
     }
   }
 
-  function disconnect() {
-    const provider = ethereum();
-    if (provider) void revokeWalletAccess(provider);
+  async function connectWalletConnect() {
+    setPending(true);
+    try {
+      const provider = await connectWalletConnectWallet();
+      await syncWalletState(provider);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "WalletConnect failed.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function disconnect() {
+    await disconnectActiveWallet();
     setAccount(undefined);
     setChainId(undefined);
     setBalances(undefined);
@@ -421,28 +447,20 @@ export default function MarketPage() {
   }
 
   async function switchNetwork() {
-    const provider = ethereum();
+    const provider = getWalletProvider();
     if (!provider) return;
-    const chainIdHex = `0x${baseSepolia.id.toString(16)}`;
-    const rpc = process.env.NEXT_PUBLIC_BASE_SEPOLIA_RPC?.trim() || "https://sepolia.base.org";
+    setPending(true);
     try {
-      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chainIdHex }] });
-    } catch (e) {
-      if ((e as { code?: number }).code !== 4902) throw e;
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [
-          {
-            chainId: chainIdHex,
-            chainName: baseSepolia.name,
-            nativeCurrency: baseSepolia.nativeCurrency,
-            rpcUrls: [rpc],
-            blockExplorerUrls: [baseSepolia.blockExplorers?.default.url],
-          },
-        ],
-      });
+      await ensureBaseSepolia(provider);
+      const state = await readWalletState(provider);
+      setAccount(state.account);
+      setChainId(state.chainId);
+      setStatus("");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Network switch failed.");
+    } finally {
+      setPending(false);
     }
-    setChainId(baseSepolia.id);
   }
 
   async function sendFlow() {
@@ -800,7 +818,10 @@ export default function MarketPage() {
         <MarketHeader
           account={account ? short(account) : undefined}
           pending={pending}
-          onConnect={connect}
+          hasInjectedWallet={hasInjected}
+          walletConnectEnabled={walletConnectEnabled}
+          onConnectInjected={connectInjected}
+          onConnectWalletConnect={connectWalletConnect}
           onDisconnect={disconnect}
         />
 
@@ -1256,8 +1277,17 @@ export default function MarketPage() {
           </div>
         ) : null}
 
-        {status ? <div className="mt-6"><StatusBanner message={status} txHash={txHash} /></div> : null}
       </div>
+      {status ? (
+        <StatusBanner
+          message={status}
+          txHash={txHash}
+          onClose={() => {
+            setStatus("");
+            setTxHash(undefined);
+          }}
+        />
+      ) : null}
     </main>
   );
 }

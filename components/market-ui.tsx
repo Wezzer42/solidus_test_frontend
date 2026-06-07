@@ -5,16 +5,23 @@ import { baseScanUrl } from "../lib/site-nav";
 import { SiteMobileNav, SiteNavLinks } from "./site-nav-links";
 import { SolidusLogo } from "./solidus-logo";
 import { TokenMark } from "./token-mark";
+import { WalletConnectButtons } from "./wallet-connect-buttons";
 
 export function MarketHeader({
   account,
   pending,
-  onConnect,
+  hasInjectedWallet,
+  walletConnectEnabled,
+  onConnectInjected,
+  onConnectWalletConnect,
   onDisconnect,
 }: {
   account?: string;
   pending: boolean;
-  onConnect: () => void;
+  hasInjectedWallet: boolean;
+  walletConnectEnabled: boolean;
+  onConnectInjected: () => void;
+  onConnectWalletConnect: () => void;
   onDisconnect: () => void;
 }) {
   return (
@@ -38,9 +45,13 @@ export function MarketHeader({
               </button>
             </>
           ) : (
-            <button className="btn-primary" type="button" disabled={pending} onClick={onConnect}>
-              Connect wallet
-            </button>
+            <WalletConnectButtons
+              pending={pending}
+              hasInjectedWallet={hasInjectedWallet}
+              walletConnectEnabled={walletConnectEnabled}
+              onConnectInjected={onConnectInjected}
+              onConnectWalletConnect={onConnectWalletConnect}
+            />
           )}
         </div>
       </div>
@@ -344,23 +355,60 @@ export function StatusBadge({ ready }: { ready: boolean }) {
 export function StatusBanner({
   message,
   txHash,
+  onClose,
 }: {
   message: string;
   txHash?: `0x${string}`;
+  onClose?: () => void;
 }) {
+  const normalized = message.toLowerCase();
+  const isError = /(failed|invalid|missing|cannot|could not|unavailable|insufficient|below floor|not configured|install)/.test(
+    normalized,
+  );
+  const isPending = /(getting|approve|pending|waiting|confirm)/.test(normalized);
+
   return (
-    <section className="panel border-[#0052ff] bg-[#0052ff] text-white">
-      <p className="text-sm font-semibold">{message}</p>
-      {txHash ? (
-        <a
-          className="mt-2 block break-all text-sm text-[#dce7ff] underline"
-          href={`${baseScanUrl}/tx/${txHash}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          View on BaseScan →
-        </a>
-      ) : null}
+    <section
+      aria-live="polite"
+      className={`fixed inset-x-4 top-4 z-[100] mx-auto max-w-md rounded-2xl border p-4 shadow-[0_18px_60px_rgba(11,23,54,0.22)] sm:inset-x-auto sm:right-5 sm:top-5 sm:w-[390px] ${
+        isError
+          ? "border-[#ffd3d3] bg-[#fff5f5] text-[#8b1e1e]"
+          : isPending
+            ? "border-[#cddcff] bg-white text-[#0b1736]"
+            : "border-[#bfe8d5] bg-[#effcf6] text-[#075c3a]"
+      }`}
+      role={isError ? "alert" : "status"}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${
+            isError ? "bg-[#e5484d]" : isPending ? "animate-pulse bg-[#0052ff]" : "bg-[#12a66a]"
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold leading-5">{message}</p>
+          {txHash ? (
+            <a
+              className="mt-1.5 inline-block text-sm font-semibold underline underline-offset-2"
+              href={`${baseScanUrl}/tx/${txHash}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View transaction
+            </a>
+          ) : null}
+        </div>
+        {onClose ? (
+          <button
+            aria-label="Close notification"
+            className="shrink-0 rounded-full px-2 py-0.5 text-lg leading-none opacity-55 transition hover:bg-black/5 hover:opacity-100"
+            onClick={onClose}
+            type="button"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
     </section>
   );
 }

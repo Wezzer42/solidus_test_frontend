@@ -19,14 +19,15 @@ import { WalletConnectButtons } from "../components/wallet-connect-buttons";
 import { ensureBaseSepolia } from "../lib/ensure-base-sepolia";
 import {
   bindWalletProvider,
+  bootstrapWallet,
   connectInjectedWallet,
   connectWalletConnectWallet,
   disconnectActiveWallet,
   getWalletProvider,
+  hasInjectedWallet,
   isWalletConnectConfigured,
-  probeInjectedWallet,
   readWalletState,
-  restoreWalletSession,
+  watchInjectedWallet,
 } from "../lib/wallet";
 
 export default function Home() {
@@ -108,19 +109,20 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [watchedAddress, loadWalletBalances]);
 
-  useEffect(() => {
-    void probeInjectedWallet().then(setHasInjected);
-  }, []);
+  useEffect(() => watchInjectedWallet(setHasInjected), []);
 
   useEffect(() => {
     let unbind: (() => void) | undefined;
     let disposed = false;
 
     async function bootstrap() {
-      const session = await restoreWalletSession();
-      if (disposed || !session) return;
+      const result = await bootstrapWallet();
+      if (disposed) return;
 
-      unbind = bindWalletProvider(session.provider, {
+      setHasInjected(hasInjectedWallet());
+      if (!result.session) return;
+
+      unbind = bindWalletProvider(result.session.provider, {
         onAccountsChanged: (accounts) => {
           const next = accounts[0] as Address | undefined;
           setConnectedAddress(next);
@@ -129,7 +131,7 @@ export default function Home() {
         onChainChanged: () => undefined,
       });
 
-      const state = await readWalletState(session.provider);
+      const state = await readWalletState(result.session.provider);
       if (disposed || !state.account) return;
       setConnectedAddress(state.account);
     }
@@ -139,7 +141,7 @@ export default function Home() {
       disposed = true;
       unbind?.();
     };
-  }, [targetAddress]);
+  }, []);
 
   async function connectInjected() {
     setPending(true);
@@ -189,23 +191,13 @@ export default function Home() {
       if (typed) {
         if (!isAddress(typed)) throw new Error("Invalid wallet address.");
         account = typed;
-      } else {
-        let provider = getWalletProvider();
-        if (!provider) {
-          if (hasInjected) {
-            provider = await connectInjectedWallet();
-          } else if (walletConnectEnabled) {
-            throw new Error("Connect with WalletConnect first, or paste your wallet address.");
-          } else {
-            throw new Error("Install MetaMask, connect with WalletConnect, or paste your wallet address.");
-          }
-        }
-
-        const accounts = (await provider.request({ method: "eth_requestAccounts" })) as Address[];
-        account = accounts[0];
-        if (!account) throw new Error("Wallet address not found.");
-        setConnectedAddress(account);
+      } else if (connectedAddress && getWalletProvider()) {
+        const provider = getWalletProvider();
+        if (!provider) throw new Error("Connect MetaMask or WalletConnect first, or paste your wallet address.");
+        account = connectedAddress;
         await ensureBaseSepolia(provider);
+      } else {
+        throw new Error("Connect MetaMask or WalletConnect first, or paste your wallet address.");
       }
 
       const response = await fetch("/api/faucet", {

@@ -52,15 +52,16 @@ import { checkPaymentToken, isBlockedPaymentToken, type TokenCheckResult } from 
 import { ensureBaseSepolia } from "../../lib/ensure-base-sepolia";
 import {
   bindWalletProvider,
+  bootstrapWallet,
   connectInjectedWallet,
   connectWalletConnectWallet,
   disconnectActiveWallet,
   getWalletProvider,
+  hasInjectedWallet,
   isWalletConnectConfigured,
-  probeInjectedWallet,
   readWalletState,
-  restoreWalletSession,
   shortAddress,
+  watchInjectedWallet,
 } from "../../lib/wallet";
 
 type MarketOrderRow = {
@@ -367,19 +368,20 @@ export default function MarketPage() {
     loadBalances().catch(() => undefined);
   }, [loadBalances]);
 
-  useEffect(() => {
-    void probeInjectedWallet().then(setHasInjected);
-  }, []);
+  useEffect(() => watchInjectedWallet(setHasInjected), []);
 
   useEffect(() => {
     let unbind: (() => void) | undefined;
     let disposed = false;
 
     async function bootstrap() {
-      const session = await restoreWalletSession();
-      if (disposed || !session) return;
+      const result = await bootstrapWallet();
+      if (disposed) return;
 
-      unbind = bindWalletProvider(session.provider, {
+      setHasInjected(hasInjectedWallet());
+      if (!result.session) return;
+
+      unbind = bindWalletProvider(result.session.provider, {
         onAccountsChanged: (accounts) => {
           const next = accounts[0] as Address | undefined;
           setAccount(next);
@@ -392,7 +394,7 @@ export default function MarketPage() {
         onChainChanged: (chainId) => setChainId(chainId),
       });
 
-      const state = await readWalletState(session.provider);
+      const state = await readWalletState(result.session.provider);
       if (disposed) return;
       setAccount(state.account);
       setChainId(state.chainId);

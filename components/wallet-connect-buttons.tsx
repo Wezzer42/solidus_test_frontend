@@ -23,7 +23,7 @@ export function WalletConnectButtons({
     <>
       {hasInjectedWallet ? (
         <button className="btn-primary" type="button" disabled={pending} onClick={onConnectInjected}>
-          Browser wallet
+          MetaMask
         </button>
       ) : null}
       {walletConnectEnabled ? (

@@ -5,4 +5,6 @@ export type EthereumProvider = {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   session?: unknown;
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
 };

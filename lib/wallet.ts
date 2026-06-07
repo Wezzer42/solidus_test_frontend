@@ -10,30 +10,91 @@ import type { EthereumProvider } from "./wallet-provider";
 export type WalletConnectionKind = "injected" | "walletconnect";
 
 let activeKind: WalletConnectionKind | null = null;
+let bootstrapPromise: Promise<WalletBootstrapResult> | null = null;
+
+export type WalletBootstrapResult = {
+  hasInjected: boolean;
+  session?: {
+    provider: EthereumProvider;
+    kind: WalletConnectionKind;
+  };
+};
 
 export type { EthereumProvider };
 export { isWalletConnectConfigured };
 
+function isMobileBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+}
+
+export function shouldProbeInjectedWallet() {
+  if (typeof window === "undefined") return false;
+  if (isMobileBrowser() && isWalletConnectConfigured()) return false;
+  return hasInjectedWallet();
+}
+
+export function listInjectedProviders() {
+  if (typeof window === "undefined") return [] as EthereumProvider[];
+
+  const injected = (window as typeof window & { ethereum?: EthereumProvider }).ethereum;
+  if (!injected) return [];
+
+  if (Array.isArray(injected.providers) && injected.providers.length > 0) {
+    return injected.providers.filter((provider) => typeof provider.request === "function");
+  }
+
+  return typeof injected.request === "function" ? [injected] : [];
+}
+
 export function ethereum() {
-  if (typeof window === "undefined") return undefined;
-  return (window as typeof window & { ethereum?: EthereumProvider }).ethereum;
+  const providers = listInjectedProviders();
+  if (providers.length === 0) return undefined;
+  return providers.find((provider) => provider.isMetaMask) ?? providers[0];
 }
 
 export function hasInjectedWallet() {
-  const provider = ethereum();
-  return Boolean(provider && typeof provider.request === "function");
+  return listInjectedProviders().length > 0;
 }
 
 export async function probeInjectedWallet() {
-  const provider = ethereum();
-  if (!provider || typeof provider.request !== "function") return false;
+  const bootstrap = await bootstrapWallet();
+  return bootstrap.hasInjected;
+}
 
-  try {
-    await provider.request({ method: "eth_accounts" });
-    return true;
-  } catch {
-    return false;
-  }
+async function readInjectedSession() {
+  // Do not call the injected provider on page load. MetaMask throws uncaught errors
+  // when its background service is disconnected even if the inpage script is present.
+  return { hasInjected: hasInjectedWallet(), session: undefined };
+}
+
+async function readWalletConnectSession() {
+  if (!isWalletConnectConfigured()) return undefined;
+
+  const walletConnect = await getWalletConnectProvider();
+  if (!walletConnect.session) return undefined;
+
+  activeKind = "walletconnect";
+  return { provider: walletConnect, kind: "walletconnect" as const };
+}
+
+export async function bootstrapWallet(): Promise<WalletBootstrapResult> {
+  if (bootstrapPromise) return bootstrapPromise;
+
+  bootstrapPromise = (async () => {
+    const walletConnectSession = await readWalletConnectSession();
+    if (walletConnectSession) {
+      return {
+        hasInjected: hasInjectedWallet(),
+        session: walletConnectSession,
+      };
+    }
+
+    await readInjectedSession();
+    return { hasInjected: hasInjectedWallet(), session: undefined };
+  })();
+
+  return bootstrapPromise;
 }
 
 export function getActiveWalletKind() {
@@ -58,6 +119,14 @@ export async function revokeWalletAccess(provider: EthereumProvider) {
   }
 }
 
+export function formatInjectedWalletError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/metamask extension not found|failed to connect to metamask|disconnected from metamask background/i.test(message)) {
+    return "MetaMask lost connection. Reload the page, unlock MetaMask, then click MetaMask again. Or use WalletConnect.";
+  }
+  return message;
+}
+
 export async function connectInjectedWallet() {
   const provider = ethereum();
   if (!provider || typeof provider.request !== "function") {
@@ -67,11 +136,7 @@ export async function connectInjectedWallet() {
   try {
     await provider.request({ method: "eth_requestAccounts" });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (/metamask extension not found|failed to connect to metamask/i.test(message)) {
-      throw new Error("MetaMask is unavailable. Use WalletConnect on mobile, or enable the MetaMask extension.");
-    }
-    throw error;
+    throw new Error(formatInjectedWalletError(error));
   }
 
   activeKind = "injected";
@@ -98,28 +163,20 @@ export async function disconnectActiveWallet() {
 }
 
 export async function restoreWalletSession() {
-  const injected = ethereum();
-  if (injected && typeof injected.request === "function") {
-    try {
-      const accounts = (await injected.request({ method: "eth_accounts" })) as string[];
-      if (accounts[0]) {
-        activeKind = "injected";
-        return { provider: injected, kind: "injected" as const };
-      }
-    } catch {
-      // Broken or disabled browser extension; ignore and try WalletConnect.
-    }
+  const bootstrap = await bootstrapWallet();
+  return bootstrap.session;
+}
+
+export function watchInjectedWallet(onChange: (available: boolean) => void) {
+  const sync = () => onChange(hasInjectedWallet());
+  sync();
+
+  if (typeof window === "undefined") {
+    return () => undefined;
   }
 
-  if (!isWalletConnectConfigured()) return undefined;
-
-  const walletConnect = await getWalletConnectProvider();
-  if (walletConnect.session) {
-    activeKind = "walletconnect";
-    return { provider: walletConnect, kind: "walletconnect" as const };
-  }
-
-  return undefined;
+  window.addEventListener("ethereum#initialized", sync);
+  return () => window.removeEventListener("ethereum#initialized", sync);
 }
 
 export function shortAddress(address: string) {

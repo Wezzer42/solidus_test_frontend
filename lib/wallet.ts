@@ -20,7 +20,20 @@ export function ethereum() {
 }
 
 export function hasInjectedWallet() {
-  return Boolean(ethereum());
+  const provider = ethereum();
+  return Boolean(provider && typeof provider.request === "function");
+}
+
+export async function probeInjectedWallet() {
+  const provider = ethereum();
+  if (!provider || typeof provider.request !== "function") return false;
+
+  try {
+    await provider.request({ method: "eth_accounts" });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function getActiveWalletKind() {
@@ -47,11 +60,20 @@ export async function revokeWalletAccess(provider: EthereumProvider) {
 
 export async function connectInjectedWallet() {
   const provider = ethereum();
-  if (!provider) {
+  if (!provider || typeof provider.request !== "function") {
     throw new Error("Install MetaMask or open this site in your wallet browser.");
   }
 
-  await provider.request({ method: "eth_requestAccounts" });
+  try {
+    await provider.request({ method: "eth_requestAccounts" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/metamask extension not found|failed to connect to metamask/i.test(message)) {
+      throw new Error("MetaMask is unavailable. Use WalletConnect on mobile, or enable the MetaMask extension.");
+    }
+    throw error;
+  }
+
   activeKind = "injected";
   return provider;
 }
@@ -77,11 +99,15 @@ export async function disconnectActiveWallet() {
 
 export async function restoreWalletSession() {
   const injected = ethereum();
-  if (injected) {
-    const accounts = (await injected.request({ method: "eth_accounts" })) as string[];
-    if (accounts[0]) {
-      activeKind = "injected";
-      return { provider: injected, kind: "injected" as const };
+  if (injected && typeof injected.request === "function") {
+    try {
+      const accounts = (await injected.request({ method: "eth_accounts" })) as string[];
+      if (accounts[0]) {
+        activeKind = "injected";
+        return { provider: injected, kind: "injected" as const };
+      }
+    } catch {
+      // Broken or disabled browser extension; ignore and try WalletConnect.
     }
   }
 

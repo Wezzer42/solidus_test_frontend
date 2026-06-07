@@ -56,8 +56,8 @@ import {
   connectWalletConnectWallet,
   disconnectActiveWallet,
   getWalletProvider,
-  hasInjectedWallet,
   isWalletConnectConfigured,
+  probeInjectedWallet,
   readWalletState,
   restoreWalletSession,
   shortAddress,
@@ -368,7 +368,7 @@ export default function MarketPage() {
   }, [loadBalances]);
 
   useEffect(() => {
-    setHasInjected(hasInjectedWallet());
+    void probeInjectedWallet().then(setHasInjected);
   }, []);
 
   useEffect(() => {

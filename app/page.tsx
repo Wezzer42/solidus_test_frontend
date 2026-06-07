@@ -23,8 +23,8 @@ import {
   connectWalletConnectWallet,
   disconnectActiveWallet,
   getWalletProvider,
-  hasInjectedWallet,
   isWalletConnectConfigured,
+  probeInjectedWallet,
   readWalletState,
   restoreWalletSession,
 } from "../lib/wallet";
@@ -109,7 +109,7 @@ export default function Home() {
   }, [watchedAddress, loadWalletBalances]);
 
   useEffect(() => {
-    setHasInjected(hasInjectedWallet());
+    void probeInjectedWallet().then(setHasInjected);
   }, []);
 
   useEffect(() => {
